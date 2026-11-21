@@ -23,16 +23,7 @@ export async function createClient() {
           cookiesToSet.forEach(({ name, value, options }) => {
             cookieStore.set(name, value, options);
           });
-        } catch (error) {
-          if (
-            error instanceof Error &&
-            error.message ===
-              "Cookies can only be modified in a Server Action or Route Handler."
-          ) {
-            return;
-          }
-          throw error;
-        }
+        } catch {}
       },
     },
   });
