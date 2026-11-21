@@ -8,6 +8,7 @@ import {
   boolean,
   timestamp,
   jsonb,
+  doublePrecision,
 } from "drizzle-orm/pg-core";
 
 export const userPlanEnum = pgEnum("user_plan", ["free", "start", "autopilot", "agency"]);
@@ -25,12 +26,16 @@ export const aiOperationEnum = pgEnum("ai_operation", [
   "marketing_autopilot",
 ]);
 export const aiStatusEnum = pgEnum("ai_status", ["success", "fallback", "failed"]);
-export const pinStatusEnum = pgEnum("pin_status", ["active", "in_negotiation", "completed", "archived"]);
+export const pinStatusEnum = pgEnum("pin_status", ["active", "locked", "completed"]);
+export const pinTypeEnum = pgEnum("pin_type", ["owner_offer", "buyer_request"]);
+export const transactionTypeEnum = pgEnum("transaction_type", ["sale", "rent"]);
+export const userRoleEnum = pgEnum("user_role", ["buyer", "owner", "agency"]);
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey(),
   email: text("email").notNull().unique(),
   fullName: text("full_name"),
+  role: userRoleEnum("role").default("owner").notNull(),
   plan: userPlanEnum("plan").default("free").notNull(),
   stripeCustomerId: text("stripe_customer_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -127,15 +132,33 @@ export const marketplacePins = pgTable("marketplace_pins", {
   id: uuid("id").defaultRandom().primaryKey(),
   ownerId: uuid("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   propertyId: uuid("property_id").references(() => properties.id, { onDelete: "set null" }),
+  pinType: pinTypeEnum("pin_type").default("owner_offer").notNull(),
+  transactionType: transactionTypeEnum("transaction_type").default("sale").notNull(),
   title: text("title").notNull(),
   city: text("city").notNull(),
+  description: text("description").default("").notNull(),
   pricePln: integer("price_pln").notNull(),
+  areaM2: integer("area_m2"),
+  rooms: integer("rooms"),
+  lat: doublePrecision("lat"),
+  lng: doublePrecision("lng"),
   status: pinStatusEnum("status").default("active").notNull(),
   lockedByUserId: uuid("locked_by_user_id").references(() => users.id, { onDelete: "set null" }),
   lockedUntil: timestamp("locked_until"),
+  contactPhone: text("contact_phone").default("").notNull(),
+  contactEmail: text("contact_email").default("").notNull(),
   metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const directMessages = pgTable("direct_messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  pinId: uuid("pin_id").notNull().references(() => marketplacePins.id, { onDelete: "cascade" }),
+  senderId: uuid("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  receiverId: uuid("receiver_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const marketplacePinMessages = pgTable("marketplace_pin_messages", {

@@ -8,17 +8,23 @@ import {
   Handshake,
   LayoutDashboard,
   LogOut,
+  Inbox,
   Sparkles,
 } from "lucide-react";
 import { signOutAction } from "@/app/(auth)/actions";
 import { createClient } from "@/lib/auth/server";
+import { db } from "@/db";
+import { eq } from "drizzle-orm";
+import { users } from "@/db/schema";
+import { changeRoleAction } from "./role-actions";
 
-const navigation = [
+const allNavigation = [
   { href: "/dashboard", label: "Pulpit", icon: LayoutDashboard },
   { href: "/properties", label: "Nieruchomości", icon: Building2 },
   { href: "/studio", label: "Studio AI i 3D", icon: Sparkles },
   { href: "/documents", label: "Dokumenty i OCR", icon: FileText },
-  { href: "/marketplace", label: "Giełda 0%", icon: Handshake },
+  { href: "/marketplace", label: "Globalna Mapa 5$", icon: Handshake },
+  { href: "/inbox", label: "Skrzynka Odbiorcza", icon: Inbox },
   { href: "/billing", label: "Plany i Kredyty", icon: Coins },
 ];
 
@@ -34,6 +40,22 @@ export default async function AppLayout({
   if (error?.name === "AuthSessionMissingError") redirect("/login");
   if (error) throw error;
   if (!user) redirect("/login");
+
+  await db
+    .insert(users)
+    .values({ id: user.id, email: user.email ?? "", role: "owner" })
+    .onConflictDoNothing({ target: users.id });
+  const [account] = await db
+    .select({ role: users.role })
+    .from(users)
+    .where(eq(users.id, user.id))
+    .limit(1);
+  const role = account?.role ?? "owner";
+  const buyerLinks = new Set(["/dashboard", "/marketplace", "/inbox"]);
+  const navigation =
+    role === "buyer"
+      ? allNavigation.filter(({ href }) => buyerLinks.has(href))
+      : allNavigation;
 
   return (
     <div className="app-shell min-h-screen lg:flex">
@@ -63,6 +85,28 @@ export default async function AppLayout({
             </Link>
           ))}
         </nav>
+
+        <form action={changeRoleAction} className="mt-4 lg:mt-5">
+          <span className="mb-2 block px-2 font-mono text-[9px] uppercase tracking-[0.18em] text-slate-500">
+            Tryb wydania
+          </span>
+          <select
+            name="role"
+            defaultValue={role}
+            onChange={(event) => event.currentTarget.form?.requestSubmit()}
+            className="spatial-input w-full"
+            aria-label="Przełącznik role"
+          >
+            <option value="buyer">Kupujący</option>
+            <option value="owner">Właściciel</option>
+            <option value="agency">Agencja</option>
+          </select>
+          {role === "agency" && (
+            <span className="mt-2 block rounded-lg border border-violet-300/20 bg-violet-300/10 px-3 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-violet-200">
+              Agencja Marka Własna
+            </span>
+          )}
+        </form>
 
         <div className="app-sidebar-footer mt-5 flex items-center justify-between gap-3 lg:mt-auto">
           <div className="flex min-w-0 items-center gap-3">

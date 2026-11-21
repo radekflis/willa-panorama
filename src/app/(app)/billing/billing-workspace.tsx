@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ArrowDownLeft, ArrowUpRight, Coins, Sparkles } from "lucide-react";
 
-type Plan = "free" | "start" | "autopilot" | "agency";
+type Plan = "free" | "start" | "autopilot" | "agency" | "owner";
 
 const plans: {
   id: Plan;
@@ -13,31 +13,17 @@ const plans: {
   accent: string;
 }[] = [
   {
-    id: "free",
-    name: "Free",
-    descriptor: "Plan bazowy",
-    detail: "Punkt startowy do pracy na platformie.",
-    accent: "plan-accent-free",
-  },
-  {
-    id: "start",
-    name: "Start",
-    descriptor: "Praca indywidualna",
-    detail: "Rozszerzony zestaw narzędzi dla jednej osoby.",
+    id: "owner",
+    name: "Pakiet Właściciel Bezpośredni",
+    descriptor: "WŁAŚCICIEL",
+    detail: "Bezpośrednie zarządzanie ofertami i kontaktami za 5$ / 20 PLN.",
     accent: "plan-accent-start",
   },
   {
-    id: "autopilot",
-    name: "Autopilot",
-    descriptor: "Automatyzacja",
-    detail: "Przestrzeń do automatyzacji przepływów pracy.",
-    accent: "plan-accent-autopilot",
-  },
-  {
     id: "agency",
-    name: "Agency",
-    descriptor: "Praca zespołowa",
-    detail: "Plan dla zespołów działających w skali agencyjnej.",
+    name: "Pakiet Agencja Marka Własna",
+    descriptor: "AGENCJA",
+    detail: "Marka własna i pełny moduł zarządzania nieruchomościami za 5$ / 20 PLN.",
     accent: "plan-accent-agency",
   },
 ];
@@ -65,6 +51,17 @@ export function BillingWorkspace({
   transactions: Transaction[];
 }) {
   const [previewPlan, setPreviewPlan] = useState<Plan | null>(null);
+
+  async function openCheckout(packageType: "owner" | "agency") {
+    const response = await fetch("/api/checkout/five-dollars", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "package", package: packageType }),
+    });
+    const data = await response.json() as { url?: string; simulated?: boolean; error?: string };
+    if (data.url) window.location.href = data.url;
+    else if (data.simulated) setPreviewPlan(packageType);
+  }
 
   return (
     <div className="space-y-8">
@@ -102,7 +99,7 @@ export function BillingWorkspace({
             Dostępne plany
           </h2>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2">
           {plans.map((plan) => {
             const active = plan.id === currentPlan;
             const selected = plan.id === previewPlan;
@@ -111,7 +108,9 @@ export function BillingWorkspace({
                 key={plan.id}
                 type="button"
                 aria-pressed={selected}
-                onClick={() => setPreviewPlan(selected ? null : plan.id)}
+                onClick={() => {
+                  void openCheckout(plan.id === "agency" ? "agency" : "owner");
+                }}
                 className={`billing-plan ${plan.accent} ${active ? "billing-plan-current" : ""} ${selected ? "billing-plan-selected" : ""}`}
               >
                 <span className="flex items-center justify-between gap-3">

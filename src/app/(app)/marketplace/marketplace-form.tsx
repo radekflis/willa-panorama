@@ -1,18 +1,50 @@
 "use client";
 
-import { useActionState } from "react";
+import { useState } from "react";
 import { ArrowUpRight, Handshake, LoaderCircle } from "lucide-react";
-import { createMarketplacePinAction, type MarketplaceActionState } from "./actions";
-
-const initialState: MarketplaceActionState = {};
+import type { MarketplaceActionState } from "./actions";
 const inputClassName =
   "spatial-input mt-1.5 w-full";
 
-export function MarketplaceForm() {
-  const [state, formAction, pending] = useActionState(
-    createMarketplacePinAction,
-    initialState,
-  );
+export function MarketplaceForm({
+  role = "owner",
+}: {
+  role?: "buyer" | "owner" | "agency";
+}) {
+  const [state, setState] = useState<MarketplaceActionState>({});
+  const [pending, setPending] = useState(false);
+
+  async function submitPin(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setState({});
+    const form = new FormData(event.currentTarget);
+    const body = {
+      action: "add_pin",
+      title: String(form.get("title") ?? ""),
+      city: String(form.get("city") ?? ""),
+      description: String(form.get("description") ?? ""),
+      pricePln: Number(form.get("pricePln")),
+      areaM2: Number(form.get("areaM2")),
+      rooms: Number(form.get("rooms")),
+      lat: Number(form.get("lat")),
+      lng: Number(form.get("lng")),
+      pinType: String(form.get("pinType")),
+      transactionType: String(form.get("transactionType")),
+      contactPhone: String(form.get("contactPhone") ?? ""),
+      contactEmail: String(form.get("contactEmail") ?? ""),
+    };
+    const response = await fetch("/api/checkout/five-dollars", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json() as { simulated?: boolean; url?: string; error?: string };
+    if (!response.ok) setState({ error: data.error ?? "Nie udało się uruchomić płatności." });
+    else if (data.url) window.location.href = data.url;
+    else if (data.simulated) setState({ success: "Tryb testowy 5$: pin został opublikowany na mapie." });
+    setPending(false);
+  }
 
   return (
     <aside className="card-lab h-fit p-5 sm:p-6">
@@ -31,7 +63,61 @@ export function MarketplaceForm() {
         Utwórz pin widoczny na tablicy ofert bezpośrednich.
       </p>
 
-      <form action={formAction} className="mt-5 space-y-4">
+      <form onSubmit={submitPin} className="mt-5 space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+          <label className="block text-xs font-medium text-slate-300">
+            Typ pinu
+            <select
+              className={inputClassName}
+              name="pinType"
+              defaultValue={role === "buyer" ? "buyer_request" : "owner_offer"}
+            >
+              {role !== "buyer" && <option value="owner_offer">Właściciel: Sprzedam / Wynajmę</option>}
+              {role !== "owner" && <option value="buyer_request">Poszukujący: Kupię / Wynajmę</option>}
+            </select>
+          </label>
+          <label className="block text-xs font-medium text-slate-300">
+            Transakcja
+            <select className={inputClassName} name="transactionType" defaultValue="sale">
+              <option value="sale">Sprzedaż</option>
+              <option value="rent">Wynajem</option>
+            </select>
+          </label>
+        </div>
+        <label className="block text-xs font-medium text-slate-300">
+          Opis
+          <textarea className={`${inputClassName} min-h-20 resize-y`} name="description" maxLength={2000} />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block text-xs font-medium text-slate-300">
+            Powierzchnia m²
+            <input className={inputClassName} name="areaM2" type="number" min="1" />
+          </label>
+          <label className="block text-xs font-medium text-slate-300">
+            Pokoje
+            <input className={inputClassName} name="rooms" type="number" min="1" />
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block text-xs font-medium text-slate-300">
+            Szerokość geogr.
+            <input className={inputClassName} name="lat" type="number" step="0.000001" placeholder="52.229676" />
+          </label>
+          <label className="block text-xs font-medium text-slate-300">
+            Długość geogr.
+            <input className={inputClassName} name="lng" type="number" step="0.000001" placeholder="21.012229" />
+          </label>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+          <label className="block text-xs font-medium text-slate-300">
+            Telefon kontaktowy
+            <input className={inputClassName} name="contactPhone" type="tel" />
+          </label>
+          <label className="block text-xs font-medium text-slate-300">
+            E-mail kontaktowy
+            <input className={inputClassName} name="contactEmail" type="email" />
+          </label>
+        </div>
         <label className="block text-xs font-medium text-slate-300">
           Tytuł oferty
           <input
@@ -87,7 +173,7 @@ export function MarketplaceForm() {
           ) : (
             <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
           )}
-          {pending ? "Zapisywanie…" : "Dodaj pin"}
+          {pending ? "Przetwarzanie 5$…" : "Dodaj Pin za 5$"}
         </button>
       </form>
     </aside>
