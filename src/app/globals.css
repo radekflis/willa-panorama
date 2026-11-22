@@ -29,3 +29,73 @@ html, body {
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
+
+/* === BIOMIMETIC DEPTH & CONTRAST === */
+body {
+  background-color: #F3F1EC;
+  background-image:
+    radial-gradient(at 12% 8%, rgba(201, 115, 78, 0.07) 0px, transparent 48%),
+    radial-gradient(at 88% 14%, rgba(28, 43, 35, 0.06) 0px, transparent 52%),
+    radial-gradient(at 50% 96%, rgba(168, 159, 141, 0.12) 0px, transparent 55%);
+  background-attachment: fixed;
+}
+
+/* Naprawa kontrastu na podstronach ze starymi klasami dark-mode (bez psucia layoutu) */
+main .text-white,
+main .text-slate-50,
+main .text-slate-100,
+main .text-slate-200,
+main .text-zinc-100,
+main .text-zinc-200 {
+  color: #1F2A24 !important;
+}
+
+main .text-slate-300,
+main .text-slate-400,
+main .text-zinc-400,
+main .text-blue-200,
+main .text-blue-300,
+main .text-cyan-200,
+main .text-cyan-300,
+main .text-emerald-200,
+main .text-emerald-300 {
+  color: #5C625B !important;
+}
+
+/* Zachowaj bialy tekst na ciemnych lub terakotowych przyciskach */
+main button.bg-\[\#1C2B23\],
+main button.bg-\[\#C9734E\],
+main a.bg-\[\#1C2B23\],
+main a.bg-\[\#C9734E\],
+main button[type="submit"] {
+  color: #FAF9F6 !important;
+}
+
+/* Organiczne karty i pola formularzy na podstronach */
+main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+main textarea,
+main select {
+  background-color: #FFFFFF !important;
+  color: #1F2A24 !important;
+  border: 1px solid #D8D2C5 !important;
+  border-radius: 12px !important;
+  padding: 0.6rem 0.85rem;
+}
+
+main input:focus,
+main textarea:focus,
+main select:focus {
+  outline: none !important;
+  border-color: #C9734E !important;
+  box-shadow: 0 0 0 3px rgba(201, 115, 78, 0.12) !important;
+}
+
+main button[type="submit"] {
+  background-color: #1C2B23 !important;
+  border-radius: 9999px !important;
+  padding: 0.7rem 1.4rem !important;
+  font-weight: 500 !important;
+}
+main button[type="submit"]:hover {
+  background-color: #2E4237 !important;
+}

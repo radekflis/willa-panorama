@@ -236,7 +236,7 @@ function PropertyCard({ property }: { property: PropertyListItem }) {
   return (
     <article className="card-lab overflow-hidden">
       <div className="flex flex-col sm:flex-row">
-        <div className="relative h-52 shrink-0 bg-slate-950 sm:h-auto sm:min-h-52 sm:w-56">
+        <div className="relative h-52 shrink-0 bg-[#FAF9F6] border border-[#DDD8CD] sm:h-auto sm:min-h-52 sm:w-56">
           {property.coverUrl ? (
             <Image
               src={property.coverUrl}
@@ -260,7 +260,7 @@ function PropertyCard({ property }: { property: PropertyListItem }) {
                 className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
                   property.status === "published"
                     ? "border border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
-                    : "border border-white/10 bg-white/[0.04] text-slate-300"
+                    : "border border-[#DDD8CD] bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] text-slate-300"
                 }`}
               >
                 {statusLabel}
@@ -278,7 +278,7 @@ function PropertyCard({ property }: { property: PropertyListItem }) {
             </p>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-b border-white/10 pb-4 text-sm text-slate-300">
+          <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-b border-[#DDD8CD] pb-4 text-sm text-slate-300">
             <span className="flex items-center gap-1.5">
               <Ruler className="h-4 w-4 text-slate-500" aria-hidden="true" />
               {Number(property.areaSqm).toLocaleString("pl-PL")} m²
@@ -337,7 +337,7 @@ function PropertyCard({ property }: { property: PropertyListItem }) {
           {deleteState.success && <ActionMessage message={deleteState.success} />}
         </div>
       </div>
-      <div className="space-y-5 border-t border-white/10 p-4 sm:p-6">
+      <div className="space-y-5 border-t border-[#DDD8CD] p-4 sm:p-6">
         <PropertyMediaArchive
           propertyId={property.id}
           propertyTitle={property.title}
@@ -433,7 +433,7 @@ function PhotoUpload({ propertyId }: { propertyId: string }) {
         {pending ? "Wysyłanie…" : "Dodaj zdjęcie"}
       </Button>
       {previewUrl && (
-        <div className="relative h-12 w-16 overflow-hidden rounded-lg border border-white/15">
+        <div className="relative h-12 w-16 overflow-hidden rounded-lg border border-[#DDD8CD]">
           <Image
             src={previewUrl}
             alt="Podgląd przesyłanego zdjęcia"

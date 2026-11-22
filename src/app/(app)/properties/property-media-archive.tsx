@@ -195,11 +195,11 @@ export function PropertyMediaArchive({ propertyId, propertyTitle, media: initial
           <input ref={folderInput} type="file" multiple accept="image/*,video/mp4,video/webm,video/quicktime"
             className="sr-only" aria-label="Wybierz folder zdjęć i filmów" onChange={(event) => void uploadFiles(event.currentTarget.files)} />
           <button type="button" onClick={() => filesInput.current?.click()} disabled={uploading}
-            className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 hover:bg-white/10 disabled:opacity-50">
+            className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#DDD8CD] bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] px-3 text-xs text-slate-200 hover:bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] disabled:opacity-50">
             <Upload className="h-4 w-4" /> Pliki
           </button>
           <button type="button" onClick={() => folderInput.current?.click()} disabled={uploading}
-            className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs text-slate-200 hover:bg-white/10 disabled:opacity-50">
+            className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#DDD8CD] bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] px-3 text-xs text-slate-200 hover:bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] disabled:opacity-50">
             <FolderOpen className="h-4 w-4" /> Folder
           </button>
         </div>
@@ -212,7 +212,7 @@ export function PropertyMediaArchive({ propertyId, propertyTitle, media: initial
       {uploadMessage && <p role="status" className="text-xs text-slate-400">{uploading && <LoaderCircle className="mr-1 inline h-3 w-3 animate-spin" />}{uploadMessage}</p>}
 
       {heroPhotos.length > 0 && (
-        <div className="rounded-2xl border border-white/10 bg-[#05070B]/70 p-4">
+        <div className="rounded-2xl border border-[#DDD8CD] bg-[#05070B]/70 p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <span className="eyebrow">HERO CAROUSEL</span>
@@ -222,12 +222,12 @@ export function PropertyMediaArchive({ propertyId, propertyTitle, media: initial
           </div>
           <div className="flex snap-x scroll-smooth gap-3 overflow-x-auto pb-2">
             {heroPhotos.map((item) => (
-              <div key={item.id} className="group relative h-36 w-56 shrink-0 snap-start overflow-hidden rounded-xl border border-white/10">
+              <div key={item.id} className="group relative h-36 w-56 shrink-0 snap-start overflow-hidden rounded-xl border border-[#DDD8CD]">
                 <button type="button" className="h-full w-full" onClick={() => { setEditingMedia(item); setEditMessage(""); }}>
                   <img src={item.url} alt={`${propertyTitle} — wizytówka`} className="h-full w-full object-cover transition group-hover:scale-105" />
                 </button>
                 <button type="button" onClick={() => void toggleHero(item.id)} aria-label="Usuń zdjęcie z wizytówki"
-                  className="absolute right-2 top-2 rounded-full border border-white/15 bg-[#05070B]/80 p-1.5 text-amber-200">
+                  className="absolute right-2 top-2 rounded-full border border-[#DDD8CD] bg-[#05070B]/80 p-1.5 text-amber-200">
                   <Star className="h-3.5 w-3.5 fill-current" />
                 </button>
               </div>
@@ -237,7 +237,7 @@ export function PropertyMediaArchive({ propertyId, propertyTitle, media: initial
       )}
 
       {album && (
-        <div className="space-y-4 rounded-2xl border border-white/10 bg-[#05070B]/70 p-4 sm:p-5">
+        <div className="space-y-4 rounded-2xl border border-[#DDD8CD] bg-[#05070B]/70 p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-medium text-white">
               {album === "photo" ? <ImageIcon className="h-4 w-4 text-cyan-200" /> : <Video className="h-4 w-4 text-fuchsia-200" />}
@@ -247,13 +247,13 @@ export function PropertyMediaArchive({ propertyId, propertyTitle, media: initial
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Jodła, taras, kominek…"
                 aria-label="Szukaj po pomieszczeniu, tagach i opisie"
-                className="h-10 w-full rounded-xl border border-white/10 bg-white/[0.04] pl-9 pr-3 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-200/30" />
+                className="h-10 w-full rounded-xl border border-[#DDD8CD] bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] pl-9 pr-3 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-200/30" />
             </label>
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {categoryTabs.map((tab) => (
               <button key={tab.id} type="button" onClick={() => setCategory(tab.id)}
-                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs transition ${category === tab.id ? "border-cyan-200/30 bg-cyan-200/10 text-cyan-100" : "border-white/10 text-slate-400 hover:bg-white/5"}`}>
+                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs transition ${category === tab.id ? "border-cyan-200/30 bg-cyan-200/10 text-cyan-100" : "border-[#DDD8CD] text-slate-400 hover:bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)]"}`}>
                 {tab.label}
               </button>
             ))}
@@ -267,7 +267,7 @@ export function PropertyMediaArchive({ propertyId, propertyTitle, media: initial
               ))}
             </div>
           ) : (
-            <p className="rounded-xl border border-dashed border-white/10 py-10 text-center text-sm text-slate-500">
+            <p className="rounded-xl border border-dashed border-[#DDD8CD] py-10 text-center text-sm text-slate-500">
               {query ? `Brak wyników dla „${query}”.` : "Brak materiałów w tej kategorii."}
             </p>
           )}
@@ -276,13 +276,13 @@ export function PropertyMediaArchive({ propertyId, propertyTitle, media: initial
 
       {editingMedia && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 backdrop-blur-md sm:p-6" role="dialog" aria-modal="true" aria-label="Studio Aranżacji i Modyfikacji Zdjęć">
-          <div className="flex max-h-[95vh] w-full max-w-6xl flex-col overflow-y-auto rounded-2xl border border-white/10 bg-[#05070B] shadow-2xl">
-            <header className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-6">
+          <div className="flex max-h-[95vh] w-full max-w-6xl flex-col overflow-y-auto rounded-2xl border border-[#DDD8CD] bg-[#05070B] shadow-2xl">
+            <header className="flex items-center justify-between border-b border-[#DDD8CD] px-4 py-3 sm:px-6">
               <div><span className="eyebrow">STUDIO ARANŻACJI I MODYFIKACJI ZDJĘĆ</span><p className="mt-1 text-xs text-slate-400">Pędzlem zaznacz obszar do modyfikacji.</p></div>
-              <button type="button" onClick={() => setEditingMedia(null)} aria-label="Zamknij Studio" className="rounded-lg p-2 text-slate-400 hover:bg-white/10"><X className="h-5 w-5" /></button>
+              <button type="button" onClick={() => setEditingMedia(null)} aria-label="Zamknij Studio" className="rounded-lg p-2 text-slate-400 hover:bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)]"><X className="h-5 w-5" /></button>
             </header>
             <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,.7fr)]">
-              <div className="relative aspect-[3/2] overflow-hidden rounded-xl border border-white/10 bg-black">
+              <div className="relative aspect-[3/2] overflow-hidden rounded-xl border border-[#DDD8CD] bg-black">
                 <img src={editingMedia.url} alt={propertyTitle} className="absolute inset-0 h-full w-full object-contain" />
                 <canvas ref={setBrushCanvas} className="absolute inset-0 h-full w-full cursor-crosshair touch-none"
                   onPointerDown={(event) => {
@@ -303,14 +303,14 @@ export function PropertyMediaArchive({ propertyId, propertyTitle, media: initial
                 <label className="block text-sm text-slate-300">Prompt aranżacji
                   <textarea value={editPrompt} onChange={(event) => setEditPrompt(event.target.value)} rows={6} maxLength={1500}
                     placeholder="np. Dodaj jasne meble skandynawskie, zachowując układ pomieszczenia…"
-                    className="mt-2 w-full resize-y rounded-xl border border-white/10 bg-white/[0.04] p-3 text-sm leading-6 text-white outline-none focus:border-cyan-200/30" />
+                    className="mt-2 w-full resize-y rounded-xl border border-[#DDD8CD] bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] p-3 text-sm leading-6 text-white outline-none focus:border-cyan-200/30" />
                 </label>
                 <fieldset>
                   <legend className="mb-2 text-sm text-slate-300">Jakość wyjściowa</legend>
                   <div className="grid grid-cols-3 gap-2">
                     {(["2K", "4K", "8K"] as const).map((tier) => (
                       <button key={tier} type="button" aria-pressed={quality === tier} onClick={() => setQuality(tier)}
-                        className={`rounded-xl border py-2 text-sm ${quality === tier ? "border-indigo-200/40 bg-indigo-200/10 text-indigo-100" : "border-white/10 text-slate-400"}`}>{tier}</button>
+                        className={`rounded-xl border py-2 text-sm ${quality === tier ? "border-indigo-200/40 bg-indigo-200/10 text-indigo-100" : "border-[#DDD8CD] text-slate-400"}`}>{tier}</button>
                     ))}
                   </div>
                 </fieldset>
@@ -340,17 +340,17 @@ function AlbumTile({ type, count, media, active, onClick }: {
   const Icon = type === "photo" ? ImageIcon : Video;
   return (
     <button type="button" onClick={onClick} aria-expanded={active}
-      className={`flex min-h-28 items-center gap-4 rounded-2xl border p-3 text-left transition ${active ? "border-cyan-200/30 bg-cyan-200/[0.07]" : "border-white/10 bg-[#05070B]/70 hover:border-white/20"}`}>
+      className={`flex min-h-28 items-center gap-4 rounded-2xl border p-3 text-left transition ${active ? "border-cyan-200/30 bg-cyan-200/[0.07]" : "border-[#DDD8CD] bg-[#05070B]/70 hover:border-[#DDD8CD]"}`}>
       <div className="flex -space-x-4">
         {media.slice(0, 3).map((item) => item.mediaType === "photo" ? (
           <img key={item.id} src={item.url} alt="" className="h-16 w-16 rounded-xl border-2 border-[#05070B] object-cover" />
         ) : (
-          <span key={item.id} className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border-2 border-[#05070B] bg-slate-900">
+          <span key={item.id} className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border-2 border-[#05070B] bg-[#FAF9F6] border border-[#DDD8CD]">
             <video src={item.url} preload="metadata" muted className="absolute inset-0 h-full w-full object-cover" />
             <Video className="relative z-10 h-6 w-6 text-white drop-shadow" />
           </span>
         ))}
-        {media.length === 0 && <span className="flex h-16 w-16 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04]"><Icon className="h-6 w-6 text-slate-500" /></span>}
+        {media.length === 0 && <span className="flex h-16 w-16 items-center justify-center rounded-xl border border-[#DDD8CD] bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)]"><Icon className="h-6 w-6 text-slate-500" /></span>}
       </div>
       <span className="min-w-0">
         <span className="block text-sm font-medium text-white">{type === "photo" ? "Zdjęcia" : "Wideo"}</span>
@@ -368,7 +368,7 @@ function MediaTile({ item, isHero, onOpen, onHero }: {
   onHero: () => void;
 }) {
   return (
-    <article className="group overflow-hidden rounded-xl border border-white/10 bg-white/[0.03]">
+    <article className="group overflow-hidden rounded-xl border border-[#DDD8CD] bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)]">
       <div className="relative aspect-[4/3] bg-black">
         {item.mediaType === "photo" ? (
           <button type="button" onClick={onOpen} className="h-full w-full"><img src={item.url} alt={item.aiDescription ?? "Zdjęcie nieruchomości"} className="h-full w-full object-cover transition group-hover:scale-[1.03]" /></button>
@@ -377,7 +377,7 @@ function MediaTile({ item, isHero, onOpen, onHero }: {
         )}
         {item.mediaType === "photo" && (
           <button type="button" onClick={onHero} aria-label={isHero ? "Usuń z wizytówki" : "Dodaj do wizytówki"}
-            className={`absolute right-2 top-2 rounded-full border p-2 backdrop-blur ${isHero ? "border-amber-200/40 bg-[#05070B]/80 text-amber-200" : "border-white/15 bg-[#05070B]/65 text-white/70 hover:text-amber-200"}`}>
+            className={`absolute right-2 top-2 rounded-full border p-2 backdrop-blur ${isHero ? "border-amber-200/40 bg-[#05070B]/80 text-amber-200" : "border-[#DDD8CD] bg-[#05070B]/65 text-white/70 hover:text-amber-200"}`}>
             <Star className={`h-3.5 w-3.5 ${isHero ? "fill-current" : ""}`} />
           </button>
         )}

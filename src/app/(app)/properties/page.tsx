@@ -77,7 +77,7 @@ export default async function PropertiesPage() {
   return (
     <main className="bg-grid-lab min-h-screen">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-5 py-10 sm:px-8 sm:py-12">
-        <header className="flex flex-col gap-4 border-b border-white/10 pb-6">
+        <header className="flex flex-col gap-4 border-b border-[#DDD8CD] pb-6">
           <Link
             href="/dashboard"
             className="w-fit text-sm font-medium text-indigo-200 hover:text-white hover:underline"
