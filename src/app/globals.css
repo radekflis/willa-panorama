@@ -761,3 +761,54 @@ main input, main textarea, main select {
   color: var(--ink-primary) !important;
   border-color: var(--border-hairline) !important;
 }
+
+
+/* === KARTY EDYTORSKIE (BEZ GRADIENTOW) === */
+/* Usuwamy ciemne gradienty, cienie i zaokraglone "balony" wewnatrz main */
+main [class*="bg-gradient"],
+main [class*="from-"],
+main [class*="bg-slate-"],
+main [class*="bg-zinc-"],
+main [class*="bg-gray-"],
+main [class*="bg-neutral-"],
+main [class*="bg-[#"] {
+  background-image: none !important;
+  background-color: #FAF9F6 !important;
+  border-color: #DDD8CD !important;
+  box-shadow: none !important;
+}
+
+/* Czyste, architektoniczne narozniki zamiast mocnych zaokraglen */
+main .rounded-3xl,
+main .rounded-2xl,
+main .rounded-xl {
+  border-radius: 6px !important;
+}
+
+/* Wyrazny kontrast tekstu na jasnych kartach */
+main h1, main h2, main h3, main h4,
+main .text-white, main [class*="text-slate-1"], main [class*="text-slate-2"], main [class*="text-zinc-1"] {
+  color: #1F2A24 !important;
+}
+main p, main [class*="text-slate-3"], main [class*="text-slate-4"], main [class*="text-slate-5"], main [class*="text-zinc-4"] {
+  color: #5C625B !important;
+}
+
+/* Subtelne ikony i obramowania w kartach */
+main a[class*="rounded"], main div[class*="border"] {
+  border-color: #DDD8CD !important;
+}
+main a[class*="rounded"]:hover {
+  background-color: #EFECE5 !important;
+}
+
+/* Terakotowe przyciski glowne (zachowujemy bialy tekst) */
+main button[type="submit"],
+main .bg-emerald-500,
+main .bg-amber-500,
+main .bg-cyan-500 {
+  background-image: none !important;
+  background-color: #C9734E !important;
+  color: #FFFFFF !important;
+  border-color: transparent !important;
+}
