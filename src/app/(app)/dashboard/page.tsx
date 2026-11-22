@@ -125,11 +125,11 @@ export default async function DashboardPage() {
       <header className="dashboard-heading">
         <div>
           <span className="eyebrow">WILLA PANORAMA / CONTROL CENTER</span>
-          <h1 className="mt-3 text-3xl font-medium tracking-[-0.04em] text-white sm:text-4xl">
+          <h1 className="mt-3 text-3xl font-medium tracking-[-0.04em] text-[#1F2A24] sm:text-4xl">
             Przestrzeń, która
             <br className="hidden sm:block" /> pracuje dla Ciebie.
           </h1>
-          <p className="mt-3 text-sm text-slate-400">
+          <p className="mt-3 text-sm text-[#5C625B]">
             Zalogowano jako {user.email ?? "użytkownik"} · wybierz moduł, aby
             kontynuować.
           </p>
@@ -157,10 +157,10 @@ export default async function DashboardPage() {
             </div>
             <div className="mt-8">
               <span className="dashboard-tile-detail">{detail}</span>
-              <h2 className="mt-2 text-lg font-medium tracking-tight text-white sm:text-xl">
+              <h2 className="mt-2 text-lg font-medium tracking-tight text-[#1F2A24] sm:text-xl">
                 {label}
               </h2>
-              <p className="mt-2 max-w-sm text-sm leading-relaxed text-slate-400">
+              <p className="mt-2 max-w-sm text-sm leading-relaxed text-[#5C625B]">
                 {description}
               </p>
             </div>

@@ -83,7 +83,7 @@ export async function POST(request: Request) {
   let output = original;
   let outputMime = sourceMime;
   let warning: string | undefined;
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY);
 
   if (apiKey) {
     try {
@@ -114,7 +114,7 @@ export async function POST(request: Request) {
       outputMime = image.mimeType || "image/png";
     } catch (error) {
       console.warn("AI photo edit unavailable; saving a safe original copy:", error);
-      warning = "Usługa generowania obrazu jest niedostępna; zapisano kopię oryginału bez zmian.";
+      warning = "Brak odpowiedzi z modelu Gemini (sprawdź GEMINI_API_KEY w Vercel → Settings → Environment Variables).";
     }
   } else {
     warning = "Brak klucza GEMINI_API_KEY; zapisano kopię oryginału bez zmian.";
