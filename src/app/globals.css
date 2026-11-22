@@ -1,101 +1,112 @@
 @import "tailwindcss";
 
 :root {
-  --linen: #F3F1EC;
-  --ivory: #FAF9F6;
-  --stone: #E7E4DC;
-  --forest: #1C2B23;
-  --moss: #2E4237;
-  --terracotta: #C9734E;
-  --ink: #1F2A24;
-  --muted: #626861;
-  --hairline: #DDD8CD;
+  --bg-stone: #F3F1EC;
+  --ink-forest: #1C2B23;
+  --ink-moss: #4E5B53;
+  --accent-terracotta: #C9734E;
+  --accent-terracotta-deep: #A95937;
+  --glass-bg: rgba(252, 251, 248, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.78);
+  --glass-line: rgba(28, 43, 35, 0.10);
+  --spring-snappy: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --spring-liquid: cubic-bezier(0.22, 1.32, 0.36, 1);
 }
 
-html, body {
-  background-color: var(--linen);
-  color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+html,
+body {
+  background-color: var(--bg-stone);
+  color: var(--ink-forest);
+  min-height: 100%;
+  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
-.font-editorial {
-  font-family: Georgia, "Times New Roman", serif;
-  letter-spacing: -0.015em;
+@keyframes liquidRise {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.97);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.008);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
-.font-mono-label {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.lbf-rise {
+  animation: liquidRise 0.58s var(--spring-snappy) both;
 }
 
-/* === BIOMIMETIC DEPTH & CONTRAST === */
-body {
-  background-color: #F3F1EC;
-  background-image:
-    radial-gradient(at 12% 8%, rgba(201, 115, 78, 0.07) 0px, transparent 48%),
-    radial-gradient(at 88% 14%, rgba(28, 43, 35, 0.06) 0px, transparent 52%),
-    radial-gradient(at 50% 96%, rgba(168, 159, 141, 0.12) 0px, transparent 55%);
-  background-attachment: fixed;
+.lbf-glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px) saturate(145%);
+  -webkit-backdrop-filter: blur(20px) saturate(145%);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 20px 48px -18px rgba(28, 43, 35, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition:
+    transform 0.45s var(--spring-snappy),
+    box-shadow 0.45s var(--spring-liquid),
+    border-color 0.3s ease;
 }
 
-/* Naprawa kontrastu na podstronach ze starymi klasami dark-mode (bez psucia layoutu) */
-main .text-white,
-main .text-slate-50,
-main .text-slate-100,
-main .text-slate-200,
-main .text-zinc-100,
-main .text-zinc-200 {
-  color: #1F2A24 !important;
+.lbf-glass:hover {
+  transform: translateY(-3px) scale(1.005);
+  box-shadow:
+    0 28px 60px -18px rgba(28, 43, 35, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
 }
 
-main .text-slate-300,
-main .text-slate-400,
-main .text-zinc-400,
-main .text-blue-200,
-main .text-blue-300,
-main .text-cyan-200,
-main .text-cyan-300,
-main .text-emerald-200,
-main .text-emerald-300 {
-  color: #5C625B !important;
+.lbf-pill {
+  border-radius: 9999px;
+  transition:
+    transform 0.36s var(--spring-snappy),
+    background-color 0.25s ease,
+    color 0.25s ease,
+    box-shadow 0.36s var(--spring-liquid);
 }
 
-/* Zachowaj bialy tekst na ciemnych lub terakotowych przyciskach */
-main button.bg-\[\#1C2B23\],
-main button.bg-\[\#C9734E\],
-main a.bg-\[\#1C2B23\],
-main a.bg-\[\#C9734E\],
-main button[type="submit"] {
-  color: #FAF9F6 !important;
+.lbf-pill:active {
+  transform: scale(0.95);
 }
 
-/* Organiczne karty i pola formularzy na podstronach */
-main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-main textarea,
-main select {
-  background-color: #FFFFFF !important;
-  color: #1F2A24 !important;
-  border: 1px solid #D8D2C5 !important;
-  border-radius: 12px !important;
-  padding: 0.6rem 0.85rem;
+.lbf-fluid-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  transition: grid-template-columns 0.48s var(--spring-liquid);
 }
 
-main input:focus,
-main textarea:focus,
-main select:focus {
-  outline: none !important;
-  border-color: #C9734E !important;
-  box-shadow: 0 0 0 3px rgba(201, 115, 78, 0.12) !important;
+html[data-role="buyer"] .lbf-fluid-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
 
-main button[type="submit"] {
-  background-color: #1C2B23 !important;
-  border-radius: 9999px !important;
-  padding: 0.7rem 1.4rem !important;
-  font-weight: 500 !important;
+html[data-role="owner"] .lbf-fluid-grid {
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
 }
-main button[type="submit"]:hover {
-  background-color: #2E4237 !important;
+
+html[data-role="agency"] .lbf-fluid-grid {
+  grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+}
+
+.lbf-input {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(28, 43, 35, 0.14);
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--ink-forest);
+  padding: 0.7rem 0.95rem;
+  transition: border-color 0.25s ease, box-shadow 0.35s var(--spring-liquid), background-color 0.25s ease;
+}
+
+.lbf-input:focus {
+  outline: none;
+  background: #FFFFFF;
+  border-color: var(--accent-terracotta);
+  box-shadow: 0 0 0 4px rgba(201, 115, 78, 0.14);
 }

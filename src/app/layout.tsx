@@ -1,3 +1,4 @@
+import { BiomimeticLiquidLayer } from "@/components/biomimetic-liquid-layer";
 import type { Metadata } from "next";
 import "./globals.css";
 
@@ -12,7 +13,8 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="pl" suppressHydrationWarning>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <BiomimeticLiquidLayer />{children}</body>
     </html>
   );
 }
