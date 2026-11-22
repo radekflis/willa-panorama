@@ -34,6 +34,30 @@ export function MarketplaceForm({
     setPending(true);
     setState({});
     const form = new FormData(event.currentTarget);
+
+    let finalLat = Number(form.get("lat"));
+    let finalLng = Number(form.get("lng"));
+    if (!finalLat && !finalLng) {
+      const q = String(form.get("location") || form.get("address") || form.get("city") || form.get("title") || "").trim();
+      if (q) {
+        try {
+          const geoRes = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(q));
+          const geoData = await geoRes.json();
+          if (Array.isArray(geoData) && geoData[0]) {
+            finalLat = Number(geoData[0].lat);
+            finalLng = Number(geoData[0].lon);
+            setLat(String(finalLat));
+            setLng(String(finalLng));
+          }
+        } catch {}
+      }
+    }
+    if (!finalLat && !finalLng) {
+      window.alert("Nie udało się znaleźć adresu na mapie. Kliknij bezpośrednio na mapie, aby ustawić pinezkę.");
+      setPending(false);
+      return;
+    }
+  
     const body = {
       action: "add_pin",
       title: String(form.get("title") ?? ""),
@@ -42,8 +66,8 @@ export function MarketplaceForm({
       pricePln: Number(form.get("pricePln")),
       areaM2: Number(form.get("areaM2")),
       rooms: Number(form.get("rooms")),
-      lat: Number(form.get("lat")),
-      lng: Number(form.get("lng")),
+      lat: finalLat,
+      lng: finalLng,
       pinType: String(form.get("pinType")),
       transactionType: String(form.get("transactionType")),
       contactPhone: String(form.get("contactPhone") ?? ""),
