@@ -129,7 +129,7 @@ export function PropertyAnalysisPanel({
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <span className="eyebrow">GŁĘBOKA ANALIZA AI</span>
-          <h3 className="mt-1 text-lg font-medium text-white">Atuty i potencjał nieruchomości</h3>
+          <h3 className="mt-1 text-lg font-medium text-[#1F2A24]">Atuty i potencjał nieruchomości</h3>
         </div>
         <button type="button" onClick={() => void analyze()} disabled={pending}
           className="inline-flex h-10 items-center gap-2 rounded-xl border border-cyan-200/20 bg-cyan-200/10 px-4 text-sm text-cyan-100 hover:bg-cyan-200/15 disabled:opacity-50">
@@ -150,25 +150,25 @@ export function PropertyAnalysisPanel({
         <div className="mb-4 flex items-center justify-between">
           <div>
             <span className="eyebrow">PARAMETRY Z ANALIZY</span>
-            <h4 className="mt-1 font-medium text-white">8 parametrów domu, ogrodu i otoczenia</h4>
+            <h4 className="mt-1 font-medium text-[#1F2A24]">8 parametrów domu, ogrodu i otoczenia</h4>
           </div>
           <span className="font-mono text-xs text-cyan-200">08 / 08</span>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {parameters.map((parameter, index) => (
             <label key={parameterNames[index]} className="rounded-xl border border-[#DDD8CD] bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] p-3">
-              <span className="text-xs text-slate-400">{parameterNames[index]}</span>
+              <span className="text-xs text-[#5C625B]">{parameterNames[index]}</span>
               <input value={parameter.value} onChange={(event) => updateParameter(index, { value: event.target.value })}
-                className="mt-2 w-full border-b border-[#DDD8CD] bg-transparent pb-1 text-sm font-medium text-white outline-none focus:border-cyan-200/50" />
+                className="mt-2 w-full border-b border-[#DDD8CD] bg-transparent pb-1 text-sm font-medium text-[#1F2A24] outline-none focus:border-cyan-200/50" />
               <textarea value={parameter.description} onChange={(event) => updateParameter(index, { description: event.target.value })}
-                rows={2} className="mt-2 w-full resize-y bg-transparent text-xs leading-relaxed text-slate-400 outline-none focus:text-slate-200" />
+                rows={2} className="mt-2 w-full resize-y bg-transparent text-xs leading-relaxed text-[#5C625B] outline-none focus:text-[#5C625B]" />
             </label>
           ))}
         </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p role={error ? "alert" : "status"} className={`text-xs ${error ? "text-rose-300" : "text-slate-400"}`}>{message}</p>
+        <p role={error ? "alert" : "status"} className={`text-xs ${error ? "text-rose-300" : "text-[#5C625B]"}`}>{message}</p>
         <button type="button" onClick={() => void save()} disabled={pending}
           className="inline-flex h-10 items-center gap-2 rounded-xl bg-indigo-200 px-4 text-sm font-semibold text-slate-950 hover:bg-indigo-100 disabled:opacity-50">
           <Save className="h-4 w-4" /> Zapisz analizę
@@ -194,17 +194,17 @@ function EditorPanel({
   return (
     <div className="overflow-hidden rounded-2xl border border-[#DDD8CD] bg-[#05070B]/70">
       <div className="flex items-center justify-between gap-2 border-b border-[#DDD8CD] px-4 py-3">
-        <h4 className="text-sm font-medium text-slate-100">{label}</h4>
+        <h4 className="text-sm font-medium text-[#5C625B]">{label}</h4>
         <div className="flex gap-1">
           <button type="button" onClick={onCopy} aria-label={`Kopiuj: ${label}`}
-            className="rounded-lg p-2 text-slate-400 hover:bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] hover:text-white"><Clipboard className="h-4 w-4" /></button>
+            className="rounded-lg p-2 text-[#5C625B] hover:bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] hover:text-[#1F2A24]"><Clipboard className="h-4 w-4" /></button>
           <button type="button" onClick={onCut} aria-label={`Wytnij: ${label}`}
-            className="rounded-lg p-2 text-slate-400 hover:bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] hover:text-white"><Scissors className="h-4 w-4" /></button>
+            className="rounded-lg p-2 text-[#5C625B] hover:bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] hover:text-[#1F2A24]"><Scissors className="h-4 w-4" /></button>
         </div>
       </div>
       <textarea value={value} onChange={(event) => onChange(event.target.value)} maxLength={30_000}
         aria-label={label} placeholder="Uruchom analizę AI albo wpisz własny tekst…"
-        className="min-h-72 w-full resize-y bg-transparent p-4 text-sm leading-7 text-slate-200 outline-none placeholder:text-slate-600 focus:bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)]" />
+        className="min-h-72 w-full resize-y bg-transparent p-4 text-sm leading-7 text-[#5C625B] outline-none placeholder:text-slate-600 focus:bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)]" />
     </div>
   );
 }

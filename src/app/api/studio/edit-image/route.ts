@@ -104,7 +104,7 @@ export async function POST(request: Request) {
           signal: AbortSignal.timeout(25_000),
         },
       );
-      if (!response.ok) throw new Error(`Image generation returned status ${response.status}.`);
+      if (!response.ok) { const errTxt = await response.text().catch(() => ""); throw new Error(`Gemini HTTP ${response.status}: ${errTxt.slice(0, 240)}`); }
       const result = await response.json() as {
         candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string; mimeType?: string } }> } }>;
       };
@@ -114,7 +114,7 @@ export async function POST(request: Request) {
       outputMime = image.mimeType || "image/png";
     } catch (error) {
       console.warn("AI photo edit unavailable; saving a safe original copy:", error);
-      warning = "Brak odpowiedzi z modelu Gemini (sprawdź GEMINI_API_KEY w Vercel → Settings → Environment Variables).";
+      `Gemini error: ${error instanceof Error ? error.message : "brak obrazu w odpowiedzi"}`;
     }
   } else {
     warning = "Brak klucza GEMINI_API_KEY; zapisano kopię oryginału bez zmian.";

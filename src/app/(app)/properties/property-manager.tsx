@@ -72,7 +72,7 @@ export function PropertyManager({
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold">Twoje nieruchomości</h2>
-            <p className="mt-1 text-sm text-slate-400">
+            <p className="mt-1 text-sm text-[#5C625B]">
               {properties.length}{" "}
               {properties.length === 1
                 ? "oferta"
@@ -88,7 +88,7 @@ export function PropertyManager({
           <div className="card-lab flex min-h-64 flex-col items-center justify-center px-6 py-10 text-center">
             <Building2 className="h-9 w-9 text-slate-500" aria-hidden="true" />
             <h3 className="mt-4 font-semibold">Nie masz jeszcze ofert</h3>
-            <p className="mt-2 max-w-sm text-sm text-slate-400">
+            <p className="mt-2 max-w-sm text-sm text-[#5C625B]">
               Dodaj pierwszą nieruchomość, aby zacząć zarządzać jej publikacją i
               zdjęciami.
             </p>
@@ -108,7 +108,7 @@ export function PropertyManager({
             Nowa oferta
           </span>
           <h2 className="mt-1 text-xl font-semibold">Dodaj nieruchomość</h2>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-[#5C625B]">
             Utwórz szkic, który możesz opublikować w dowolnym momencie.
           </p>
         </div>
@@ -260,7 +260,7 @@ function PropertyCard({ property }: { property: PropertyListItem }) {
                 className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
                   property.status === "published"
                     ? "border border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
-                    : "border border-[#DDD8CD] bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] text-slate-300"
+                    : "border border-[#DDD8CD] bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)] text-[#5C625B]"
                 }`}
               >
                 {statusLabel}
@@ -268,7 +268,7 @@ function PropertyCard({ property }: { property: PropertyListItem }) {
               <h3 className="mt-2 break-words text-lg font-semibold leading-snug">
                 {property.title}
               </h3>
-              <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-400">
+              <p className="mt-1 flex items-center gap-1.5 text-sm text-[#5C625B]">
                 <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 {property.city} · {property.address}
               </p>
@@ -278,7 +278,7 @@ function PropertyCard({ property }: { property: PropertyListItem }) {
             </p>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-b border-[#DDD8CD] pb-4 text-sm text-slate-300">
+          <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-b border-[#DDD8CD] pb-4 text-sm text-[#5C625B]">
             <span className="flex items-center gap-1.5">
               <Ruler className="h-4 w-4 text-slate-500" aria-hidden="true" />
               {Number(property.areaSqm).toLocaleString("pl-PL")} m²

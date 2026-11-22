@@ -80,7 +80,7 @@ export default async function PropertiesPage() {
         <header className="flex flex-col gap-4 border-b border-[#DDD8CD] pb-6">
           <Link
             href="/dashboard"
-            className="w-fit text-sm font-medium text-indigo-200 hover:text-white hover:underline"
+            className="w-fit text-sm font-medium text-indigo-200 hover:text-[#1F2A24] hover:underline"
           >
             ← Powrót do pulpitu
           </Link>
@@ -88,10 +88,10 @@ export default async function PropertiesPage() {
             <span className="eyebrow">
               Willa Panorama · Moduł
             </span>
-            <h1 className="mt-1 text-3xl font-semibold tracking-[-0.02em] text-white">
+            <h1 className="mt-1 text-3xl font-semibold tracking-[-0.02em] text-[#1F2A24]">
               Nieruchomości
             </h1>
-            <p className="mt-2 text-sm text-slate-400">
+            <p className="mt-2 text-sm text-[#5C625B]">
               Zarządzaj swoimi ofertami, zdjęciami i publikacją.
             </p>
           </div>
