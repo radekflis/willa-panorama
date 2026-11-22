@@ -683,14 +683,20 @@ select.spatial-input option {
 }
 
 /* === ARCHITEKTONICZNY STYL EDYTORSKI === */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
 :root {
   --bg-linen: #F3F1EC;
   --bg-stone: #E7E4DC;
-  --bg-ivory: #F7F5F0;
+  --bg-ivory: #FAF9F6;
+  --sidebar-forest: #1C2B23;
+  --sidebar-hover: #25382E;
+  --sidebar-border: #2C3F35;
   --ink-primary: #1F2A24;
-  --ink-muted: #5C625B;
-  --accent-terracotta: #9E7458;
-  --border-hairline: #D8D3C8;
+  --ink-muted: #626861;
+  --accent-terracotta: #C9734E;
+  --accent-terracotta-hover: #B5623F;
+  --border-hairline: #DDD8CD;
 }
 
 html, body {
@@ -698,32 +704,64 @@ html, body {
   color: var(--ink-primary) !important;
 }
 
-.font-editorial {
-  font-family: Georgia, "Times New Roman", serif;
+h1, h2, .font-editorial {
+  font-family: 'Cormorant Garamond', Georgia, serif !important;
+  letter-spacing: -0.01em;
 }
 
 .font-mono-label {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.16em;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
-[class*="bg-[#0"], .bg-slate-950, .bg-slate-900, .bg-zinc-950, .bg-black {
+/* Ciemnozielony pasek boczny (jak w Archiwum Borzygniew) */
+aside {
+  background-color: var(--sidebar-forest) !important;
+  border-color: var(--sidebar-border) !important;
+  color: #E8E5DC !important;
+}
+aside a, aside span, aside p, aside div, aside button {
+  color: #DCE0D9 !important;
+}
+aside a:hover, aside button:hover {
+  background-color: var(--sidebar-hover) !important;
+  color: #FFFFFF !important;
+}
+aside select {
+  background-color: #25382E !important;
+  color: #FFFFFF !important;
+  border-color: #384E42 !important;
+}
+
+/* Jasna przestrzen robocza i karty */
+main, [class*="bg-[#0"], .bg-slate-950, .bg-slate-900, .bg-zinc-950 {
   background-color: var(--bg-linen) !important;
 }
-[class*="bg-white/"], .bg-slate-800 {
+main [class*="bg-white/"], main .bg-slate-800 {
   background-color: var(--bg-ivory) !important;
 }
-.text-white, .text-slate-50, .text-slate-100, .text-slate-200 {
+main .text-white, main .text-slate-50, main .text-slate-100, main .text-slate-200 {
   color: var(--ink-primary) !important;
 }
-.text-slate-300, .text-slate-400, .text-slate-500 {
+main .text-slate-300, main .text-slate-400, main .text-slate-500 {
   color: var(--ink-muted) !important;
 }
-[class*="border-white/"], .border-slate-800, .border-slate-700 {
+main [class*="border-white/"], main .border-slate-800, main .border-slate-700 {
   border-color: var(--border-hairline) !important;
 }
-input, textarea, select {
+
+/* Terakotowe przyciski glowne */
+main button[type="submit"], main .bg-emerald-500, main .bg-amber-500, main .bg-cyan-500 {
+  background-color: var(--accent-terracotta) !important;
+  color: #FFFFFF !important;
+  border-color: transparent !important;
+}
+main button[type="submit"]:hover, main .bg-emerald-500:hover {
+  background-color: var(--accent-terracotta-hover) !important;
+}
+
+main input, main textarea, main select {
   background-color: #FFFFFF !important;
   color: var(--ink-primary) !important;
   border-color: var(--border-hairline) !important;
