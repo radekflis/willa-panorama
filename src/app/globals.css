@@ -762,53 +762,46 @@ main input, main textarea, main select {
   border-color: var(--border-hairline) !important;
 }
 
-
 /* === KARTY EDYTORSKIE (BEZ GRADIENTOW) === */
-/* Usuwamy ciemne gradienty, cienie i zaokraglone "balony" wewnatrz main */
-main [class*="bg-gradient"],
-main [class*="from-"],
-main [class*="bg-slate-"],
-main [class*="bg-zinc-"],
-main [class*="bg-gray-"],
-main [class*="bg-neutral-"],
-main [class*="bg-[#"] {
+/* Nadpisanie wszystkich ciemnych kart, gradientow Tailwind v4 (bg-linear) i klas glass/bento poza paskiem bocznym */
+:where(body) :not(aside):not(aside *):is(
+  [class*="bg-linear"],
+  [class*="bg-gradient"],
+  [class*="glass"],
+  [class*="bento"],
+  [class*="card"],
+  [class*="panel"],
+  [class*="bg-slate-"],
+  [class*="bg-zinc-"],
+  [class*="bg-gray-"],
+  [class*="bg-neutral-"],
+  [class*="bg-[#0"],
+  [class*="bg-[#1"],
+  [class*="bg-[#2"]
+) {
   background-image: none !important;
   background-color: #FAF9F6 !important;
-  border-color: #DDD8CD !important;
+  border: 1px solid #DDD8CD !important;
   box-shadow: none !important;
-}
-
-/* Czyste, architektoniczne narozniki zamiast mocnych zaokraglen */
-main .rounded-3xl,
-main .rounded-2xl,
-main .rounded-xl {
+  backdrop-filter: none !important;
   border-radius: 6px !important;
 }
 
-/* Wyrazny kontrast tekstu na jasnych kartach */
-main h1, main h2, main h3, main h4,
-main .text-white, main [class*="text-slate-1"], main [class*="text-slate-2"], main [class*="text-zinc-1"] {
+/* Wyrazny ciemny tekst na jasnych kartach */
+:where(body) :not(aside):not(aside *):is(h1, h2, h3, h4, strong, .text-white, [class*="text-slate-1"], [class*="text-slate-2"], [class*="text-zinc-1"]) {
   color: #1F2A24 !important;
 }
-main p, main [class*="text-slate-3"], main [class*="text-slate-4"], main [class*="text-slate-5"], main [class*="text-zinc-4"] {
+:where(body) :not(aside):not(aside *):is(p, span, [class*="text-slate-3"], [class*="text-slate-4"], [class*="text-slate-5"], [class*="text-zinc-4"]) {
   color: #5C625B !important;
 }
 
-/* Subtelne ikony i obramowania w kartach */
-main a[class*="rounded"], main div[class*="border"] {
-  border-color: #DDD8CD !important;
-}
-main a[class*="rounded"]:hover {
-  background-color: #EFECE5 !important;
-}
-
-/* Terakotowe przyciski glowne (zachowujemy bialy tekst) */
-main button[type="submit"],
-main .bg-emerald-500,
-main .bg-amber-500,
-main .bg-cyan-500 {
+/* Terakotowe przyciski glowne z bialym tekstem */
+:where(body) :not(aside):not(aside *):is(button[type="submit"], .bg-emerald-500, .bg-amber-500, .bg-cyan-500) {
   background-image: none !important;
   background-color: #C9734E !important;
   color: #FFFFFF !important;
   border-color: transparent !important;
+}
+:where(body) :not(aside):not(aside *):is(button[type="submit"], .bg-emerald-500, .bg-amber-500, .bg-cyan-500) * {
+  color: #FFFFFF !important;
 }
