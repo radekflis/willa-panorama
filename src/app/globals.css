@@ -683,8 +683,6 @@ select.spatial-input option {
 }
 
 /* === ARCHITEKTONICZNY STYL EDYTORSKI === */
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
 :root {
   --bg-linen: #F3F1EC;
   --bg-stone: #E7E4DC;
@@ -705,17 +703,16 @@ html, body {
 }
 
 h1, h2, .font-editorial {
-  font-family: 'Cormorant Garamond', Georgia, serif !important;
+  font-family: Georgia, "Times New Roman", serif !important;
   letter-spacing: -0.01em;
 }
 
 .font-mono-label {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
-/* Ciemnozielony pasek boczny (jak w Archiwum Borzygniew) */
 aside {
   background-color: var(--sidebar-forest) !important;
   border-color: var(--sidebar-border) !important;
@@ -734,7 +731,6 @@ aside select {
   border-color: #384E42 !important;
 }
 
-/* Jasna przestrzen robocza i karty */
 main, [class*="bg-[#0"], .bg-slate-950, .bg-slate-900, .bg-zinc-950 {
   background-color: var(--bg-linen) !important;
 }
@@ -751,7 +747,6 @@ main [class*="border-white/"], main .border-slate-800, main .border-slate-700 {
   border-color: var(--border-hairline) !important;
 }
 
-/* Terakotowe przyciski glowne */
 main button[type="submit"], main .bg-emerald-500, main .bg-amber-500, main .bg-cyan-500 {
   background-color: var(--accent-terracotta) !important;
   color: #FFFFFF !important;
