@@ -682,81 +682,29 @@ select.spatial-input option {
   }
 }
 
-/* === STYL BORZYGNIEW (TYLKO KOLORY I KARTY, BEZ ZMIANY UKLADU) === */
-:root {
-  --bg-linen: #F3F1EC;
-  --bg-ivory: #FAF9F6;
-  --sidebar-forest: #1C2B23;
-  --sidebar-hover: #25382E;
-  --sidebar-border: #2C3F35;
-  --ink-primary: #1F2A24;
-  --ink-muted: #5C625B;
-  --accent-terracotta: #C9734E;
-  --border-hairline: #DDD8CD;
-}
-
+/* === CZYSTE KOLORY BORZYGNIEW (BEZ ZMIANY UKLADU) === */
 html, body {
-  background-color: var(--bg-linen) !important;
-  color: var(--ink-primary) !important;
+  background-color: #F3F1EC !important;
+  color: #1F2A24 !important;
 }
-
 aside {
-  background-color: var(--sidebar-forest) !important;
-  border-color: var(--sidebar-border) !important;
+  background-color: #1C2B23 !important;
+  border-color: #2C3F35 !important;
   color: #E8E5DC !important;
 }
 aside a, aside span, aside p, aside div, aside button {
   color: #DCE0D9 !important;
-}
-aside a:hover, aside button:hover {
-  background-color: var(--sidebar-hover) !important;
 }
 aside select {
   background-color: #25382E !important;
   color: #FFFFFF !important;
   border-color: #384E42 !important;
 }
-
 main {
-  background-color: var(--bg-linen) !important;
-  color: var(--ink-primary) !important;
+  background-color: #F3F1EC !important;
+  color: #1F2A24 !important;
 }
-
 main h1, main h2 {
   font-family: Georgia, "Times New Roman", serif !important;
-  color: var(--ink-primary) !important;
-}
-
-/* Plaskie, jasne karty zamiast ciemnych boksow */
-main [class*="card"],
-main [class*="bento"],
-main [class*="glass"],
-main [class*="panel"],
-main [class*="bg-slate-"],
-main [class*="bg-zinc-"],
-main [class*="bg-black"],
-main [class*="bg-[#0"],
-main [class*="bg-[#1"],
-main [class*="bg-[#2"] {
-  background-image: none !important;
-  background-color: var(--bg-ivory) !important;
-  border-color: var(--border-hairline) !important;
-  box-shadow: none !important;
-}
-
-main .text-white, main [class*="text-slate-1"], main [class*="text-slate-2"] {
-  color: var(--ink-primary) !important;
-}
-main [class*="text-slate-3"], main [class*="text-slate-4"], main [class*="text-slate-5"] {
-  color: var(--ink-muted) !important;
-}
-
-main button[type="submit"],
-main .bg-emerald-500,
-main .bg-amber-500,
-main .bg-cyan-500 {
-  background-image: none !important;
-  background-color: var(--accent-terracotta) !important;
-  color: #FFFFFF !important;
-  border-color: transparent !important;
+  color: #1F2A24 !important;
 }
