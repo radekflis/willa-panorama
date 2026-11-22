@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Activity, ArrowUpRight, Building2, MapPin, Sparkles } from "lucide-react";
+import { PropertyMediaArchive } from "../properties/property-media-archive";
+import type { PropertyMediaItem } from "../properties/property-manager";
 
 type StudioProperty = {
   id: string;
@@ -11,6 +13,8 @@ type StudioProperty = {
   pricePln: number;
   areaSqm: string;
   rooms: number;
+  heroMediaIds: string[];
+  media: PropertyMediaItem[];
 };
 
 const modes = [
@@ -22,8 +26,8 @@ const modes = [
   },
   {
     id: "staging",
-    label: "Home Staging 3D",
-    note: "Przestrzeń robocza do koncepcji aranżacji wnętrza.",
+    label: "Studio Aranżacji i Modyfikacji Zdjęć",
+    note: "Zaznacz obszar pędzlem i utwórz nową kopię zdjęcia.",
     icon: Building2,
   },
   {
@@ -53,7 +57,8 @@ export function StudioWorkspace({
   const selectedMode = modes.find(({ id }) => id === mode) ?? modes[0];
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+    <div className="space-y-5">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
       <section className="card-lab space-y-7 p-5 sm:p-7">
         <div>
           <span className="eyebrow">01 / PROPERTY CONTEXT</span>
@@ -174,6 +179,15 @@ export function StudioWorkspace({
           </div>
         </div>
       </section>
+      </div>
+      {selectedProperty && (
+        <PropertyMediaArchive
+          propertyId={selectedProperty.id}
+          propertyTitle={selectedProperty.title}
+          media={selectedProperty.media}
+          heroMediaIds={selectedProperty.heroMediaIds}
+        />
+      )}
     </div>
   );
 }

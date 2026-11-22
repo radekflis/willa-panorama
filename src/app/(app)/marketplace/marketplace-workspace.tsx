@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapPin, Unlock, RotateCcw, Search } from "lucide-react";
 import { MarketplaceForm } from "./marketplace-form";
 import { restoreMarketplacePinAction } from "./actions";
@@ -21,14 +21,19 @@ export type PublicPin = {
   status: "active" | "locked" | "completed";
 };
 
-type GoogleMarker = { setMap(map: unknown): void };
+type GoogleLatLng = { lat(): number; lng(): number };
+type GoogleMapInstance = {
+  panTo(position: { lat: number; lng: number }): void;
+  addListener(event: "click", handler: (event: { latLng?: GoogleLatLng }) => void): { remove(): void };
+};
+type GoogleMarker = { setMap(map: GoogleMapInstance | null): void };
 type GoogleMapWindow = {
   google?: {
     maps: {
-      Map: new (element: HTMLElement, options: Record<string, unknown>) => unknown;
+      Map: new (element: HTMLElement, options: Record<string, unknown>) => GoogleMapInstance;
       Marker: new (options: Record<string, unknown>) => GoogleMarker;
-      Size: new (width: number, height: number) => unknown;
-      Point: new (x: number, y: number) => unknown;
+      Size: new (width: number, height: number) => { width: number; height: number };
+      Point: new (x: number, y: number) => { x: number; y: number };
       MapTypeId: { HYBRID: unknown };
     };
   };
@@ -53,6 +58,14 @@ export function MarketplaceWorkspace({
     ownerId: string;
   } | null>(null);
   const [pending, setPending] = useState(false);
+  const [mapInstance, setMapInstance] = useState<GoogleMapInstance | null>(null);
+  const markersRef = useRef<GoogleMarker[]>([]);
+  const seenPinIdsRef = useRef(new Set(pins.map((pin) => pin.id)));
+  const [mapCoordinates, setMapCoordinates] = useState<{ lat: string; lng: string } | null>(null);
+  const handleMapCoordinates = useCallback((lat: number, lng: number) => {
+    setMapCoordinates({ lat: lat.toFixed(6), lng: lng.toFixed(6) });
+  }, []);
+  const consumeMapCoordinates = useCallback(() => setMapCoordinates(null), []);
 
   const visiblePins = useMemo(() => pins.filter((pin) => {
     if (filter === "all") return true;
@@ -81,17 +94,57 @@ export function MarketplaceWorkspace({
         zoom: 6,
         mapTypeId: maps.MapTypeId.HYBRID,
       });
-      visiblePins.forEach((pin) => {
-        if (pin.lat == null || pin.lng == null) return;
-        const marker = new maps.Marker({
-          position: { lat: pin.lat, lng: pin.lng },
-          map,
-          title: pin.title,
-        });
-        marker.setMap(map);
-      });
+      setMapInstance(map);
     }
-  }, [googleMapsKey, visiblePins]);
+  }, [googleMapsKey, handleMapCoordinates]);
+
+  useEffect(() => {
+    if (!mapInstance) return;
+    const listener = mapInstance.addListener("click", (event) => {
+      const lat = event.latLng?.lat();
+      const lng = event.latLng?.lng();
+      if (lat != null && lng != null) handleMapCoordinates(lat, lng);
+    });
+    return () => listener.remove();
+  }, [mapInstance, handleMapCoordinates]);
+
+  useEffect(() => {
+    if (!mapInstance) return;
+    markersRef.current.forEach((marker) => marker.setMap(null));
+    markersRef.current = [];
+    const maps = (window as unknown as GoogleMapWindow).google?.maps;
+    if (!maps) return;
+
+    visiblePins.forEach((pin) => {
+      const lat = Number(pin.lat);
+      const lng = Number(pin.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+      const fill = pin.pinType === "owner_offer" ? "#10b981" : "#06b6d4";
+      const accent = pin.pinType === "owner_offer" ? "#fbbf24" : "#a5f3fc";
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="68" viewBox="0 0 56 68"><path fill="${fill}" stroke="${accent}" stroke-width="4" d="M28 2C13.6 2 2 13.6 2 28c0 18 26 38 26 38s26-20 26-38C54 13.6 42.4 2 28 2Z"/><path fill="#05070B" stroke="${accent}" stroke-width="2.5" stroke-linejoin="round" d="m14 29 14-12 14 12v16H14Z"/><path fill="${accent}" d="M25 35h6v10h-6z"/></svg>`;
+      const marker = new maps.Marker({
+        position: { lat, lng },
+        map: mapInstance,
+        title: pin.title,
+        icon: {
+          url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+          scaledSize: new maps.Size(56, 68),
+          anchor: new maps.Point(28, 66),
+        },
+      });
+      markersRef.current.push(marker);
+    });
+  }, [mapInstance, visiblePins]);
+
+  useEffect(() => {
+    const newlyAdded = pins.find((pin) => !seenPinIdsRef.current.has(pin.id));
+    pins.forEach((pin) => seenPinIdsRef.current.add(pin.id));
+    if (newlyAdded && newlyAdded.lat != null && newlyAdded.lng != null) {
+      const lat = Number(newlyAdded.lat);
+      const lng = Number(newlyAdded.lng);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) mapInstance?.panTo({ lat, lng });
+    }
+  }, [mapInstance, pins]);
 
   async function unlockPin(pin: PublicPin) {
     setPending(true);
@@ -194,7 +247,11 @@ export function MarketplaceWorkspace({
           </article>
         )}
       </div>
-      <MarketplaceForm role={role} />
+      <MarketplaceForm
+        role={role}
+        mapCoordinates={mapCoordinates}
+        onMapCoordinatesConsumed={consumeMapCoordinates}
+      />
     </div>
   );
 }

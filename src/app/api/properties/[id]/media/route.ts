@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
@@ -7,11 +7,17 @@ import { properties, propertyMedia } from "@/db/schema";
 import { createClient } from "@/lib/auth/server";
 
 const MAX_FILE_SIZE = 12 * 1024 * 1024;
+const MAX_VIDEO_SIZE = 150 * 1024 * 1024;
 const IMAGE_TYPES: Record<string, string> = {
   "image/avif": "avif",
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
+};
+const VIDEO_TYPES: Record<string, string> = {
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/quicktime": "mov",
 };
 
 async function hasExpectedImageSignature(file: File, extension: string) {
@@ -41,6 +47,14 @@ async function hasExpectedImageSignature(file: File, extension: string) {
     String.fromCharCode(...bytes.slice(4, 8)) === "ftyp" &&
     ["avif", "avis"].includes(String.fromCharCode(...bytes.slice(8, 12)))
   );
+}
+
+async function hasExpectedVideoSignature(file: File, extension: string) {
+  const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  if (extension === "webm") {
+    return bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3;
+  }
+  return String.fromCharCode(...bytes.slice(4, 8)) === "ftyp";
 }
 
 function jsonError(message: string, status: number) {
@@ -103,16 +117,19 @@ async function uploadPropertyMedia(
     return jsonError("Wybierz plik graficzny do przesłania.", 400);
   }
 
-  const extension = IMAGE_TYPES[file.type];
-  if (!extension) {
-    return jsonError("Dozwolone formaty zdjęć to JPG, PNG, WebP i AVIF.", 415);
+  const photoExtension = IMAGE_TYPES[file.type];
+  const videoExtension = VIDEO_TYPES[file.type];
+  const mediaType = videoExtension ? "video" : "photo";
+  const extension = photoExtension ?? videoExtension;
+  if (!extension) return jsonError("Obsługiwane formaty: JPG, PNG, WebP, AVIF, MP4, WebM i MOV.", 415);
+  const maxFileSize = mediaType === "video" ? MAX_VIDEO_SIZE : MAX_FILE_SIZE;
+  if (file.size === 0 || file.size > maxFileSize) {
+    return jsonError(`Plik musi mieć rozmiar od 1 B do ${mediaType === "video" ? "150 MB" : "12 MB"}.`, 413);
   }
-  if (file.size === 0 || file.size > MAX_FILE_SIZE) {
-    return jsonError("Zdjęcie musi mieć rozmiar od 1 B do 12 MB.", 413);
-  }
-  if (!(await hasExpectedImageSignature(file, extension))) {
-    return jsonError("Plik nie jest prawidłowym obrazem w zadeklarowanym formacie.", 415);
-  }
+  const validSignature = mediaType === "video"
+    ? await hasExpectedVideoSignature(file, extension)
+    : await hasExpectedImageSignature(file, extension);
+  if (!validSignature) return jsonError("Plik nie jest prawidłowym plikiem zadeklarowanego formatu.", 415);
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -147,7 +164,10 @@ async function uploadPropertyMedia(
       propertyId,
       url: publicUrl.publicUrl,
       storagePath,
-      mediaType: "image",
+      mediaType,
+      category: "inne",
+      aiTags: [],
+      isOriginal: true,
       isCover: existingMedia.length === 0,
       sortOrder: existingMedia.length,
     });
@@ -159,8 +179,54 @@ async function uploadPropertyMedia(
       console.error("Could not clean up an unreferenced property image:", cleanupError);
     }
     console.error("Could not save uploaded property media in Neon:", databaseError);
-    return jsonError("Zdjęcie przesłano, ale nie udało się zapisać go przy ofercie.", 500);
+    return jsonError("Plik przesłano, ale nie udało się zapisać go przy ofercie.", 500);
   }
 
-  return NextResponse.json({ url: publicUrl.publicUrl });
+  return NextResponse.json({ url: publicUrl.publicUrl, mediaType });
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error && error.name !== "AuthSessionMissingError") {
+    return jsonError("Nie udało się zweryfikować sesji użytkownika.", 500);
+  }
+  if (!user) return jsonError("Zaloguj się, aby zapisać wizytówkę.", 401);
+  const { id: propertyId } = await params;
+  const [property] = await db.select({ id: properties.id })
+    .from(properties)
+    .where(and(eq(properties.id, propertyId), eq(properties.ownerId, user.id)))
+    .limit(1);
+  if (!property) return jsonError("Nie znaleziono tej nieruchomości.", 404);
+
+  let body: { heroMediaIds?: unknown };
+  try {
+    body = await request.json() as { heroMediaIds?: unknown };
+  } catch {
+    return jsonError("Nieprawidłowe dane wizytówki.", 400);
+  }
+  if (!Array.isArray(body.heroMediaIds) || body.heroMediaIds.length > 30 ||
+      !body.heroMediaIds.every((id) => typeof id === "string")) {
+    return jsonError("Wizytówka może zawierać do 30 zdjęć.", 400);
+  }
+  const heroMediaIds = [...new Set(body.heroMediaIds)];
+  if (heroMediaIds.length) {
+    const matches = await db.select({ id: propertyMedia.id })
+      .from(propertyMedia)
+      .where(and(
+        eq(propertyMedia.propertyId, propertyId),
+        eq(propertyMedia.mediaType, "photo"),
+        inArray(propertyMedia.id, heroMediaIds),
+      ));
+    if (matches.length !== heroMediaIds.length) {
+      return jsonError("Wizytówka może zawierać tylko zdjęcia tej nieruchomości.", 400);
+    }
+  }
+  await db.update(properties)
+    .set({ heroMediaIds, updatedAt: new Date() })
+    .where(and(eq(properties.id, propertyId), eq(properties.ownerId, user.id)));
+  return NextResponse.json({ heroMediaIds });
 }

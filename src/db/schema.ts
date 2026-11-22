@@ -9,6 +9,7 @@ import {
   timestamp,
   jsonb,
   doublePrecision,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 export const userPlanEnum = pgEnum("user_plan", ["free", "start", "autopilot", "agency"]);
@@ -71,6 +72,10 @@ export const properties = pgTable("properties", {
   status: propertyStatusEnum("status").default("draft").notNull(),
   lat: numeric("lat", { precision: 9, scale: 6 }),
   lng: numeric("lng", { precision: 9, scale: 6 }),
+  richHighlights: text("rich_highlights"),
+  locationPotential: text("location_potential"),
+  parametersJson: jsonb("parameters_json").$type<PropertyParameter[]>().default([]),
+  heroMediaIds: jsonb("hero_media_ids").$type<string[]>().default([]),
   metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -81,11 +86,32 @@ export const propertyMedia = pgTable("property_media", {
   propertyId: uuid("property_id").notNull().references(() => properties.id, { onDelete: "cascade" }),
   url: text("url").notNull(),
   storagePath: text("storage_path").notNull(),
-  mediaType: text("media_type").default("image").notNull(),
+  mediaType: text("media_type").$type<"photo" | "video">().default("photo").notNull(),
+  category: text("category").$type<MediaCategory>().default("inne").notNull(),
+  aiTags: jsonb("ai_tags").$type<string[]>().default([]).notNull(),
+  aiDescription: text("ai_description"),
+  isOriginal: boolean("is_original").default(true).notNull(),
+  parentMediaId: uuid("parent_media_id").references((): AnyPgColumn => propertyMedia.id, { onDelete: "set null" }),
+  resolutionTier: text("resolution_tier").$type<"2K" | "4K" | "8K">().default("2K").notNull(),
   isCover: boolean("is_cover").default(false).notNull(),
   sortOrder: integer("sort_order").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export type MediaCategory =
+  | "wnetrza"
+  | "ogrod"
+  | "elewacja"
+  | "otoczenie"
+  | "widoki"
+  | "detale"
+  | "inne";
+
+export type PropertyParameter = {
+  name: string;
+  value: string;
+  description: string;
+};
 
 export const creditWallets = pgTable("credit_wallets", {
   id: uuid("id").defaultRandom().primaryKey(),

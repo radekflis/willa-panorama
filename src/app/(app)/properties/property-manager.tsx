@@ -13,6 +13,9 @@ import {
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PropertyAnalysisPanel } from "./property-analysis-panel";
+import { PropertyMediaArchive } from "./property-media-archive";
+import type { MediaCategory, PropertyParameter } from "@/db/schema";
 import {
   createPropertyAction,
   deletePropertyAction,
@@ -29,12 +32,29 @@ export type PropertyListItem = {
   areaSqm: string;
   rooms: number;
   status: "draft" | "published" | "sold" | "archived";
+  description: string | null;
+  richHighlights: string | null;
+  locationPotential: string | null;
+  parametersJson: PropertyParameter[];
+  heroMediaIds: string[];
+  media: PropertyMediaItem[];
   coverUrl: string | null;
 };
 
+export type PropertyMediaItem = {
+  id: string;
+  url: string;
+  mediaType: "photo" | "video";
+  category: MediaCategory;
+  aiTags: string[];
+  aiDescription: string | null;
+  isOriginal: boolean;
+  parentMediaId: string | null;
+  resolutionTier: "2K" | "4K" | "8K";
+};
+
 const initialActionState: PropertyActionState = {};
-const inputClassName =
-  "mt-1.5 w-full rounded-[10px] border border-[#E5E5E5] bg-white px-3.5 py-2.5 text-sm text-[#111111] outline-none transition focus:border-[#6B0F1A] focus:ring-2 focus:ring-[#6B0F1A]/10";
+const inputClassName = "spatial-input mt-1.5 w-full";
 
 export function PropertyManager({
   properties,
@@ -52,7 +72,7 @@ export function PropertyManager({
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold">Twoje nieruchomości</h2>
-            <p className="mt-1 text-sm text-[#6B7280]">
+            <p className="mt-1 text-sm text-slate-400">
               {properties.length}{" "}
               {properties.length === 1
                 ? "oferta"
@@ -61,14 +81,14 @@ export function PropertyManager({
                   : "ofert"}
             </p>
           </div>
-          <Building2 className="h-5 w-5 text-[#6B0F1A]" aria-hidden="true" />
+          <Building2 className="h-5 w-5 text-indigo-200" aria-hidden="true" />
         </div>
 
         {properties.length === 0 ? (
           <div className="card-lab flex min-h-64 flex-col items-center justify-center px-6 py-10 text-center">
-            <Building2 className="h-9 w-9 text-[#B8A0A3]" aria-hidden="true" />
+            <Building2 className="h-9 w-9 text-slate-500" aria-hidden="true" />
             <h3 className="mt-4 font-semibold">Nie masz jeszcze ofert</h3>
-            <p className="mt-2 max-w-sm text-sm text-[#6B7280]">
+            <p className="mt-2 max-w-sm text-sm text-slate-400">
               Dodaj pierwszą nieruchomość, aby zacząć zarządzać jej publikacją i
               zdjęciami.
             </p>
@@ -84,11 +104,11 @@ export function PropertyManager({
 
       <aside className="card-lab order-1 p-5 sm:p-6 lg:sticky lg:top-6 lg:order-2">
         <div className="mb-5">
-          <span className="font-mono text-[11px] uppercase tracking-wider text-[#6B0F1A]">
+          <span className="eyebrow">
             Nowa oferta
           </span>
           <h2 className="mt-1 text-xl font-semibold">Dodaj nieruchomość</h2>
-          <p className="mt-1 text-sm text-[#6B7280]">
+          <p className="mt-1 text-sm text-slate-400">
             Utwórz szkic, który możesz opublikować w dowolnym momencie.
           </p>
         </div>
@@ -216,7 +236,7 @@ function PropertyCard({ property }: { property: PropertyListItem }) {
   return (
     <article className="card-lab overflow-hidden">
       <div className="flex flex-col sm:flex-row">
-        <div className="relative h-52 shrink-0 bg-[#F5F5F4] sm:h-auto sm:min-h-52 sm:w-56">
+        <div className="relative h-52 shrink-0 bg-slate-950 sm:h-auto sm:min-h-52 sm:w-56">
           {property.coverUrl ? (
             <Image
               src={property.coverUrl}
@@ -226,7 +246,7 @@ function PropertyCard({ property }: { property: PropertyListItem }) {
               className="object-cover"
             />
           ) : (
-            <div className="flex h-full min-h-52 flex-col items-center justify-center gap-2 text-[#9CA3AF]">
+            <div className="flex h-full min-h-52 flex-col items-center justify-center gap-2 text-slate-500">
               <ImagePlus className="h-8 w-8" aria-hidden="true" />
               <span className="text-xs">Brak zdjęcia</span>
             </div>
@@ -239,8 +259,8 @@ function PropertyCard({ property }: { property: PropertyListItem }) {
               <span
                 className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
                   property.status === "published"
-                    ? "bg-[#EAF5EC] text-[#26723B]"
-                    : "bg-[#F3F4F6] text-[#525252]"
+                    ? "border border-emerald-300/20 bg-emerald-300/10 text-emerald-200"
+                    : "border border-white/10 bg-white/[0.04] text-slate-300"
                 }`}
               >
                 {statusLabel}
@@ -248,19 +268,19 @@ function PropertyCard({ property }: { property: PropertyListItem }) {
               <h3 className="mt-2 break-words text-lg font-semibold leading-snug">
                 {property.title}
               </h3>
-              <p className="mt-1 flex items-center gap-1.5 text-sm text-[#6B7280]">
+              <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-400">
                 <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 {property.city} · {property.address}
               </p>
             </div>
-            <p className="whitespace-nowrap text-lg font-semibold text-[#6B0F1A]">
+            <p className="whitespace-nowrap text-lg font-semibold text-indigo-200">
               {price}
             </p>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-b border-[#F0F0F0] pb-4 text-sm text-[#525252]">
+          <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-b border-white/10 pb-4 text-sm text-slate-300">
             <span className="flex items-center gap-1.5">
-              <Ruler className="h-4 w-4 text-[#8A8A8A]" aria-hidden="true" />
+              <Ruler className="h-4 w-4 text-slate-500" aria-hidden="true" />
               {Number(property.areaSqm).toLocaleString("pl-PL")} m²
             </span>
             <span>{property.rooms} pokoje</span>
@@ -295,7 +315,7 @@ function PropertyCard({ property }: { property: PropertyListItem }) {
                 type="submit"
                 variant="ghost"
                 size="sm"
-                className="text-[#8A2633] hover:bg-[#FFF1F2]"
+                className="text-rose-300 hover:bg-rose-300/10"
                 disabled={deletePending}
               >
                 {deletePending ? (
@@ -316,6 +336,20 @@ function PropertyCard({ property }: { property: PropertyListItem }) {
           {deleteState.error && <ActionMessage message={deleteState.error} error />}
           {deleteState.success && <ActionMessage message={deleteState.success} />}
         </div>
+      </div>
+      <div className="space-y-5 border-t border-white/10 p-4 sm:p-6">
+        <PropertyMediaArchive
+          propertyId={property.id}
+          propertyTitle={property.title}
+          media={property.media}
+          heroMediaIds={property.heroMediaIds}
+        />
+        <PropertyAnalysisPanel
+          propertyId={property.id}
+          richHighlights={property.richHighlights}
+          locationPotential={property.locationPotential}
+          parametersJson={property.parametersJson}
+        />
       </div>
     </article>
   );
@@ -413,7 +447,7 @@ function PhotoUpload({ propertyId }: { propertyId: string }) {
       {message && (
         <span
           role={error ? "alert" : "status"}
-          className={`text-xs ${error ? "text-[#B42318]" : "text-[#26723B]"}`}
+          className={`text-xs ${error ? "text-rose-300" : "text-emerald-300"}`}
         >
           {message}
         </span>
@@ -432,7 +466,7 @@ function ActionMessage({
   return (
     <p
       role={error ? "alert" : "status"}
-      className={`mt-3 text-sm ${error ? "text-[#B42318]" : "text-[#26723B]"}`}
+      className={`mt-3 text-sm ${error ? "text-rose-300" : "text-emerald-300"}`}
     >
       {message}
     </p>

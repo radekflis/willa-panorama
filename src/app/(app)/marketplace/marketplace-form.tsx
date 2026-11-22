@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowUpRight, Handshake, LoaderCircle } from "lucide-react";
 import type { MarketplaceActionState } from "./actions";
 const inputClassName =
@@ -8,11 +9,25 @@ const inputClassName =
 
 export function MarketplaceForm({
   role = "owner",
+  mapCoordinates,
+  onMapCoordinatesConsumed,
 }: {
   role?: "buyer" | "owner" | "agency";
+  mapCoordinates: { lat: string; lng: string } | null;
+  onMapCoordinatesConsumed: () => void;
 }) {
+  const router = useRouter();
   const [state, setState] = useState<MarketplaceActionState>({});
   const [pending, setPending] = useState(false);
+  const [lat, setLat] = useState("");
+  const [lng, setLng] = useState("");
+
+  useEffect(() => {
+    if (!mapCoordinates) return;
+    setLat(mapCoordinates.lat);
+    setLng(mapCoordinates.lng);
+    onMapCoordinatesConsumed();
+  }, [mapCoordinates, onMapCoordinatesConsumed]);
 
   async function submitPin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -34,16 +49,24 @@ export function MarketplaceForm({
       contactPhone: String(form.get("contactPhone") ?? ""),
       contactEmail: String(form.get("contactEmail") ?? ""),
     };
-    const response = await fetch("/api/checkout/five-dollars", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await response.json() as { simulated?: boolean; url?: string; error?: string };
-    if (!response.ok) setState({ error: data.error ?? "Nie udało się uruchomić płatności." });
-    else if (data.url) window.location.href = data.url;
-    else if (data.simulated) setState({ success: "Tryb testowy 5$: pin został opublikowany na mapie." });
-    setPending(false);
+    try {
+      const response = await fetch("/api/checkout/five-dollars", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json() as { simulated?: boolean; url?: string; error?: string };
+      if (!response.ok) setState({ error: data.error ?? "Nie udało się uruchomić płatności." });
+      else if (data.url) window.location.href = data.url;
+      else if (data.simulated) {
+        setState({ success: "Tryb testowy 5$: pin został opublikowany na mapie." });
+        router.refresh();
+      }
+    } catch {
+      setState({ error: "Nie udało się połączyć z serwerem. Spróbuj ponownie." });
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
@@ -101,11 +124,11 @@ export function MarketplaceForm({
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-xs font-medium text-slate-300">
             Szerokość geogr.
-            <input className={inputClassName} name="lat" type="number" step="0.000001" placeholder="52.229676" />
+            <input className={inputClassName} name="lat" type="number" step="0.000001" placeholder="52.229676" value={lat} onChange={(event) => setLat(event.target.value)} />
           </label>
           <label className="block text-xs font-medium text-slate-300">
             Długość geogr.
-            <input className={inputClassName} name="lng" type="number" step="0.000001" placeholder="21.012229" />
+            <input className={inputClassName} name="lng" type="number" step="0.000001" placeholder="21.012229" value={lng} onChange={(event) => setLng(event.target.value)} />
           </label>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
