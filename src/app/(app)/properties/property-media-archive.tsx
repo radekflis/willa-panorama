@@ -29,6 +29,7 @@ export function PropertyMediaArchive({ propertyId, propertyTitle, media: initial
   const filesInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const [media, setMedia] = useState(initialMedia);
+  const [generatedCopyUrl, setGeneratedCopyUrl] = useState<string | null>(null);
   const [heroIds, setHeroIds] = useState(initialHeroIds);
   const [album, setAlbum] = useState<"photo" | "video" | null>(null);
   const [category, setCategory] = useState<"all" | MediaCategory>("all");
@@ -224,7 +225,7 @@ export function PropertyMediaArchive({ propertyId, propertyTitle, media: initial
             {heroPhotos.map((item) => (
               <div key={item.id} className="group relative h-36 w-56 shrink-0 snap-start overflow-hidden rounded-xl border border-[#DDD8CD]">
                 <button type="button" className="h-full w-full" onClick={() => { setEditingMedia(item); setEditMessage(""); }}>
-                  <img src={item.url} alt={`${propertyTitle} — wizytówka`} className="h-full w-full object-cover transition group-hover:scale-105" />
+                  <img src={generatedCopyUrl || item.url} alt={`${propertyTitle} — wizytówka`} className="h-full w-full object-cover transition group-hover:scale-105" />
                 </button>
                 <button type="button" onClick={() => void toggleHero(item.id)} aria-label="Usuń zdjęcie z wizytówki"
                   className="absolute right-2 top-2 rounded-full border border-[#DDD8CD] bg-[#05070B]/80 p-1.5 text-amber-200">
@@ -283,7 +284,7 @@ export function PropertyMediaArchive({ propertyId, propertyTitle, media: initial
             </header>
             <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,.7fr)]">
               <div className="relative aspect-[3/2] overflow-hidden rounded-xl border border-[#DDD8CD] bg-black">
-                <img src={editingMedia.url} alt={propertyTitle} className="absolute inset-0 h-full w-full object-contain" />
+                <img src={generatedCopyUrl || editingMedia.url} alt={propertyTitle} className="absolute inset-0 h-full w-full object-contain" />
                 <canvas ref={setBrushCanvas} className="absolute inset-0 h-full w-full cursor-crosshair touch-none"
                   onPointerDown={(event) => {
                     drawingRef.current = true;
@@ -343,7 +344,7 @@ function AlbumTile({ type, count, media, active, onClick }: {
       className={`flex min-h-28 items-center gap-4 rounded-2xl border p-3 text-left transition ${active ? "border-cyan-200/30 bg-cyan-200/[0.07]" : "border-[#DDD8CD] bg-[#05070B]/70 hover:border-[#DDD8CD]"}`}>
       <div className="flex -space-x-4">
         {media.slice(0, 3).map((item) => item.mediaType === "photo" ? (
-          <img key={item.id} src={item.url} alt="" className="h-16 w-16 rounded-xl border-2 border-[#05070B] object-cover" />
+          <img key={item.id} src={generatedCopyUrl || item.url} alt="" className="h-16 w-16 rounded-xl border-2 border-[#05070B] object-cover" />
         ) : (
           <span key={item.id} className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border-2 border-[#05070B] bg-[#FAF9F6] border border-[#DDD8CD]">
             <video src={item.url} preload="metadata" muted className="absolute inset-0 h-full w-full object-cover" />
@@ -371,7 +372,7 @@ function MediaTile({ item, isHero, onOpen, onHero }: {
     <article className="group overflow-hidden rounded-xl border border-[#DDD8CD] bg-[#FAF9F6] border border-[#DDD8CD] shadow-[0_8px_30px_rgba(28,43,35,0.04)]">
       <div className="relative aspect-[4/3] bg-black">
         {item.mediaType === "photo" ? (
-          <button type="button" onClick={onOpen} className="h-full w-full"><img src={item.url} alt={item.aiDescription ?? "Zdjęcie nieruchomości"} className="h-full w-full object-cover transition group-hover:scale-[1.03]" /></button>
+          <button type="button" onClick={onOpen} className="h-full w-full"><img src={generatedCopyUrl || item.url} alt={item.aiDescription ?? "Zdjęcie nieruchomości"} className="h-full w-full object-cover transition group-hover:scale-[1.03]" /></button>
         ) : (
           <video src={item.url} controls preload="metadata" className="h-full w-full object-cover" />
         )}

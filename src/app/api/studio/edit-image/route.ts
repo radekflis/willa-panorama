@@ -88,7 +88,7 @@ export async function POST(request: Request) {
   if (apiKey) {
     try {
       const parts: Array<Record<string, unknown>> = [
-        { text: `Edytuj dostarczone zdjęcie nieruchomości zgodnie z poleceniem: "${prompt}". Zachowaj geometrię budynku i fotorealistyczny charakter. Docelowy poziom jakości: ${quality}. Jeśli dołączono maskę, białe obszary wskazują obszar do modyfikacji, zachowaj resztę obrazu bez zmian.` },
+        { text: `Wykonaj widoczną, fotorealistyczną modyfikację zdjęcia nieruchomości zgodnie z poleceniem użytkownika: "${prompt}". Jeśli podano prompt po polsku, zinterpretuj go dokładnie (np. dodanie elementu, zmiana aranżacji, oświetlenia lub wykończenia). Jeśli dołączono maskę, modyfikuj przede wszystkim obszar zaznaczony na masce, płynnie dopasowując perspektywę, cienie i oświetlenie do reszty wnętrza/ogrodu. Docelowy poziom jakości: ${quality}. Zwróć wygenerowany obraz.` },
         { inlineData: { mimeType: sourceMime, data: original.toString("base64") } },
       ];
       if (mask) parts.push({ inlineData: { mimeType: mask.mimeType, data: mask.data } });
