@@ -190,3 +190,8 @@ html[data-role="agency"] .lbf-fluid-grid {
     border-radius: 38% 62% 54% 46% / 42% 60% 40% 58%;
   }
 }
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}
