@@ -96,12 +96,92 @@ export const BIOPHILIC_MAP_STYLE: mapboxgl.StyleSpecification = {
   ],
 };
 
+
+export const BIOLUMINESCENT_DARK_MAP_STYLE: mapboxgl.StyleSpecification = {
+  version: 8,
+  name: "Bioluminescent Night",
+  sources: {
+    "mapbox-streets": {
+      type: "vector",
+      url: "mapbox://mapbox.mapbox-streets-v8",
+    },
+  },
+  glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
+  layers: [
+    { id: "background", type: "background", paint: { "background-color": "#06110E" } },
+    {
+      id: "landuse-parks",
+      type: "fill",
+      source: "mapbox-streets",
+      "source-layer": "landuse",
+      filter: ["in", "class", "park", "wood", "grass", "scrub"],
+      paint: { "fill-color": "#0C261F", "fill-opacity": 0.9 },
+    },
+    {
+      id: "water",
+      type: "fill",
+      source: "mapbox-streets",
+      "source-layer": "water",
+      paint: { "fill-color": "#082026" },
+    },
+    {
+      id: "buildings",
+      type: "fill",
+      source: "mapbox-streets",
+      "source-layer": "building",
+      minzoom: 13,
+      paint: { "fill-color": "#0F2923", "fill-opacity": 0.7 },
+    },
+    {
+      id: "roads-minor",
+      type: "line",
+      source: "mapbox-streets",
+      "source-layer": "road",
+      filter: ["in", "class", "street", "street_limited", "service"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#163B32",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1, 16, 5],
+      },
+    },
+    {
+      id: "roads-major",
+      type: "line",
+      source: "mapbox-streets",
+      "source-layer": "road",
+      filter: ["in", "class", "primary", "secondary", "trunk", "motorway"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#1D5E4E",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 16, 9],
+      },
+    },
+    {
+      id: "place-labels",
+      type: "symbol",
+      source: "mapbox-streets",
+      "source-layer": "place_label",
+      layout: {
+        "text-field": ["get", "name_pl"],
+        "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
+        "text-size": 12,
+      },
+      paint: {
+        "text-color": "#86EFAC",
+        "text-halo-color": "#06110E",
+        "text-halo-width": 1.5,
+      },
+    },
+  ],
+};
+
 interface BiomimeticMapProps {
   properties: PropertyMarkerData[];
   hoveredId: string | null;
   selectedId: string | null;
   onHover: (id: string | null) => void;
   onSelect: (id: string) => void;
+  isDark?: boolean;
 }
 
 export function BiomimeticPropertyMap({
@@ -110,6 +190,7 @@ export function BiomimeticPropertyMap({
   selectedId,
   onHover,
   onSelect,
+  isDark = false,
 }: BiomimeticMapProps) {
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
@@ -142,7 +223,7 @@ export function BiomimeticPropertyMap({
 
   return (
     
-      <Map mapboxAccessToken={token} initialViewState={{longitude:17.0385,latitude:51.1079,zoom:11.5}} style={{width:"100%",height:"100%"}} mapStyle={BIOPHILIC_MAP_STYLE}>
+      <Map mapboxAccessToken={token} initialViewState={{longitude:17.0385,latitude:51.1079,zoom:11.5}} style={{width:"100%",height:"100%"}} mapStyle={isDark ? BIOLUMINESCENT_DARK_MAP_STYLE : BIOPHILIC_MAP_STYLE}>
       {properties.map((prop) => {
         const isHighlighted = hoveredId === prop.id || selectedId === prop.id;
 

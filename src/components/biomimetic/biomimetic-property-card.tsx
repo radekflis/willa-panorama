@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { motion } from "framer-motion";
 import { Heart, Maximize2, MapPin, Sparkles } from "lucide-react";
 
@@ -13,6 +13,8 @@ export interface PropertyCardProps {
   rooms: number;
   imageUrl: string;
   ecoScore?: number;
+  isLiked?: boolean;
+  onToggleLike?: (id: string) => void;
   onSelect: (id: string) => void;
   onHoverChange?: (id: string | null) => void;
 }
@@ -26,11 +28,11 @@ export function BiomimeticPropertyCard({
   rooms,
   imageUrl,
   ecoScore = 94,
+  isLiked = false,
+  onToggleLike,
   onSelect,
   onHoverChange,
 }: PropertyCardProps) {
-  const [isLiked, setIsLiked] = useState(false);
-
   return (
     <motion.div
       layoutId={`property-card-${id}`}
@@ -46,22 +48,22 @@ export function BiomimeticPropertyCard({
         mass: 0.8,
       }}
       className="group relative cursor-pointer overflow-hidden rounded-[32px] p-3 transition-shadow duration-500
-                 bg-white/70 dark:bg-emerald-950/45
+                 bg-white/75 dark:bg-emerald-950/60
                  backdrop-blur-2xl backdrop-saturate-150
-                 border border-white/75 dark:border-emerald-400/20
+                 border border-white/75 dark:border-emerald-400/25
                  shadow-[0_8px_32px_rgba(16,42,35,0.08),inset_0_1px_1px_rgba(255,255,255,0.85)]
-                 hover:shadow-[0_20px_48px_rgba(16,185,129,0.16),inset_0_1px_2px_rgba(255,255,255,0.95)]"
+                 hover:shadow-[0_20px_48px_rgba(16,185,129,0.2),inset_0_1px_2px_rgba(255,255,255,0.95)]"
     >
       <div className="pointer-events-none absolute -inset-12 -z-10 rounded-full bg-gradient-to-tr from-emerald-300/20 via-teal-200/10 to-amber-200/20 opacity-0 blur-2xl transition-opacity duration-700 group-hover:opacity-100" />
 
-      <div className="relative h-52 w-full overflow-hidden rounded-[24px] bg-stone-200/60">
+      <div className="relative h-52 w-full overflow-hidden rounded-[24px] bg-stone-200/60 dark:bg-emerald-950">
         <img
           src={imageUrl}
           alt={title}
           className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
         />
 
-        <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/40 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-md border border-white/25">
+        <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-md border border-white/25">
           <Sparkles className="h-3.5 w-3.5 text-emerald-300" />
           <span>Bio-Index {ecoScore}%</span>
         </div>
@@ -70,16 +72,16 @@ export function BiomimeticPropertyCard({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            setIsLiked(!isLiked);
+            onToggleLike?.(id);
           }}
           whileTap={{ scale: 0.75 }}
           transition={{ type: "spring", stiffness: 500, damping: 15 }}
-          aria-label="Polub ofertę"
-          className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-stone-800 backdrop-blur-md border border-white/85 shadow-sm transition-colors hover:bg-white"
+          aria-label="Zapisz ofertę"
+          className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-white/85 dark:bg-emerald-950/80 text-stone-800 dark:text-stone-100 backdrop-blur-md border border-white/85 dark:border-emerald-400/30 shadow-sm transition-colors hover:bg-white"
         >
           <Heart
             className={`h-4 w-4 transition-colors duration-300 ${
-              isLiked ? "fill-rose-500 text-rose-500" : "text-stone-700"
+              isLiked ? "fill-rose-500 text-rose-500" : "text-stone-700 dark:text-stone-200"
             }`}
           />
         </motion.button>
@@ -91,23 +93,23 @@ export function BiomimeticPropertyCard({
             <h3 className="text-lg font-semibold tracking-tight text-stone-900 dark:text-stone-100">
               {title}
             </h3>
-            <p className="mt-0.5 flex items-center gap-1 text-xs text-stone-500 dark:text-emerald-200/70">
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-stone-500 dark:text-emerald-200/75">
               <MapPin className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400" />
               {location}
             </p>
           </div>
 
-          <span className="rounded-2xl bg-emerald-950/5 dark:bg-emerald-400/10 px-3 py-1.5 text-sm font-bold text-emerald-900 dark:text-emerald-300 whitespace-nowrap">
+          <span className="rounded-2xl bg-emerald-950/5 dark:bg-emerald-400/15 px-3 py-1.5 text-sm font-bold text-emerald-900 dark:text-emerald-300 whitespace-nowrap">
             {price}
           </span>
         </div>
 
         <div className="mt-4 flex items-center justify-between border-t border-stone-200/60 dark:border-emerald-800/40 pt-3 text-xs font-medium text-stone-600 dark:text-stone-300">
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-white/85 dark:bg-white/5 px-3 py-1 border border-stone-200/50 dark:border-white/10">
+            <span className="rounded-full bg-white/85 dark:bg-white/10 px-3 py-1 border border-stone-200/50 dark:border-white/10">
               {area} m²
             </span>
-            <span className="rounded-full bg-white/85 dark:bg-white/5 px-3 py-1 border border-stone-200/50 dark:border-white/10">
+            <span className="rounded-full bg-white/85 dark:bg-white/10 px-3 py-1 border border-stone-200/50 dark:border-white/10">
               {rooms} pok.
             </span>
           </div>
