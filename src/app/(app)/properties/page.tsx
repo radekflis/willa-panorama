@@ -235,6 +235,7 @@ export default function LiquidBiomimeticsCommandCenter() {
         body: JSON.stringify({
           propertyId: selectedId || currentProperty.id,
           mediaId: studioPhoto.id,
+          imageUrl: studioPhoto.url,
           prompt: prompt.trim(),
           quality,
           maskDataUrl,
