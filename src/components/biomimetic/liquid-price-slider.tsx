@@ -30,7 +30,7 @@ export function LiquidPriceSlider({
   };
 
   return (
-    <div className="relative w-full max-w-xs pt-10 pb-1 select-none">
+    <div className="relative w-72 sm:w-80 pt-10 pb-1 select-none">
       <svg className="hidden" aria-hidden="true">
         <defs>
           <filter id="liquid-gooey-filter">
@@ -102,7 +102,7 @@ export function LiquidPriceSlider({
         aria-label="Maksymalna cena nieruchomości"
       />
 
-      <div className="mt-1 flex justify-between text-[11px] font-medium text-stone-500 dark:text-stone-400">
+      <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px] font-medium text-stone-500 dark:text-stone-400">
         <span>300 tys. zł</span>
         <span className="text-emerald-800 dark:text-emerald-300 font-semibold">
           Do {formatPrice(value)}
