@@ -9,7 +9,6 @@ import {
   Check,
   Compass,
   Copy,
-  ExternalLink,
   FileCheck2,
   FolderSearch,
   Home,
@@ -26,8 +25,11 @@ import { BiomimeticPropertyCard } from "./biomimetic-property-card";
 import {
   BiomimeticPropertyMap,
   MapCameraTarget,
-  PoiMarkerData,
+  MapPoint,
   PropertyMarkerData,
+  RouteDestination,
+  RouteInfo,
+  RouteMode,
 } from "./biomimetic-property-map";
 import { PropertyDetailData } from "./biomimetic-property-detail";
 import { LiquidPriceSlider } from "./liquid-price-slider";
@@ -78,7 +80,7 @@ interface DrawerState {
   desc: string;
   img?: string;
   tool?: ToolId;
-  poi?: PoiMarkerData;
+  place?: google.maps.places.Place;
 }
 
 const ROLE_LABELS: Record<RoleId, string> = {
@@ -220,6 +222,10 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   const [activeFeature, setActiveFeature] = useState<FeatureId | null>(null);
   const [activeDrawer, setActiveDrawer] = useState<DrawerState | null>(null);
   const [cameraTarget, setCameraTarget] = useState<MapCameraTarget | null>(null);
+  const [routeDestination, setRouteDestination] = useState<RouteDestination | null>(null);
+  const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [streetViewTarget, setStreetViewTarget] = useState<MapPoint | null>(null);
   const [studioSource, setStudioSource] = useState<string | null>(null);
   const [studioPrompt, setStudioPrompt] = useState("");
   const [studioQuality, setStudioQuality] = useState<"2K" | "4K" | "8K">("4K");
@@ -269,51 +275,6 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
       })),
     [filteredProperties]
   );
-
-  const poiMarkers = useMemo<PoiMarkerData[]>(() => {
-    if (!activeProperty || activeFeature !== "ok") return [];
-    const googleMaps = (query: string) =>
-      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
-    return [
-      {
-        id: "health",
-        label: "Przychodnia Zdrowia",
-        category: "Zdrowie",
-        lat: activeProperty.lat + 0.018,
-        lng: activeProperty.lng - 0.014,
-        phone: "tel:+48713250000",
-        url: googleMaps("Przychodnia Zdrowia Mietków"),
-        desc: "Placówka medyczna w kilku minutach od nieruchomości.",
-      },
-      {
-        id: "pharmacy",
-        label: "Apteka",
-        category: "Zdrowie",
-        lat: activeProperty.lat + 0.011,
-        lng: activeProperty.lng + 0.024,
-        url: googleMaps("Apteka Mietków"),
-        desc: "Apteka w centrum osiedla.",
-      },
-      {
-        id: "bike",
-        label: "Szlak Rowerowy · 18 km",
-        category: "Rekreacja",
-        lat: activeProperty.lat - 0.016,
-        lng: activeProperty.lng + 0.032,
-        url: googleMaps("szlak rowerowy Jezioro Mietkowskie"),
-        desc: "Malownicza pętla wokół jeziora, pól i lasu.",
-      },
-      {
-        id: "marina",
-        label: "Przystań & Windsurfing",
-        category: "Woda",
-        lat: activeProperty.lat - 0.028,
-        lng: activeProperty.lng - 0.021,
-        url: googleMaps("Przystań Jezioro Mietkowskie windsurfing"),
-        desc: "Marina, plaża i strefa windsurfingowa.",
-      },
-    ];
-  }, [activeFeature, activeProperty]);
 
   const flyToProperty = (overrides: Partial<MapCameraTarget>) => {
     if (!activeProperty) return;
@@ -406,12 +367,18 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
             setSelectedId(id);
             selectFeature(role === "buyer" ? "dom" : "op");
           }}
-          isDark={isDark}
           cameraTarget={cameraTarget}
-          poiMarkers={poiMarkers}
-          onSelectPoi={(poi) =>
-            setActiveDrawer({ title: poi.label, desc: poi.desc, poi })
-          }
+          onSelectGooglePlace={(place) => {
+            setRouteDestination(null);
+            setRouteInfo(null);
+            setActiveDrawer({ title: place.displayName ?? "Miejsce Google", desc: "", place });
+          }}
+          routeOrigin={activeProperty ? { lat: activeProperty.lat, lng: activeProperty.lng } : undefined}
+          routeDestination={routeDestination}
+          onRouteInfo={setRouteInfo}
+          onRouteError={setRouteError}
+          streetViewTarget={streetViewTarget}
+          onCloseStreetView={() => setStreetViewTarget(null)}
         />
       </div>
 
@@ -478,7 +445,7 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
 
         {!feature && (
           <aside
-            className="no-scrollbar pointer-events-auto absolute bottom-6 left-4 top-20 hidden w-[350px] space-y-4 overflow-y-auto pr-1 md:block"
+            className="no-scrollbar pointer-events-auto absolute bottom-32 left-4 top-20 hidden w-[350px] space-y-4 overflow-y-auto pr-1 md:block"
             style={{ maskImage: "linear-gradient(to bottom, transparent 0%, black 4%, black 96%, transparent 100%)" }}
           >
             {filteredProperties.map((property) => (
@@ -506,7 +473,7 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
 
         <nav
           aria-label="Funkcje Living Map-OS"
-          className="no-scrollbar pointer-events-auto absolute bottom-5 right-3 top-20 flex flex-col items-end gap-2.5 overflow-y-auto py-1 pr-0.5"
+          className="no-scrollbar pointer-events-auto absolute bottom-16 right-3 top-20 flex flex-col items-end gap-2.5 overflow-y-auto py-1 pr-0.5"
         >
           {ROLE_FEATURES[role].map((featureId, index) => {
             const item = FEATURES[featureId];
@@ -569,7 +536,7 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
               </div>
 
               {feature.isPlan ? (
-                <div className="pointer-events-auto absolute bottom-24 left-4 top-20 w-[min(430px,calc(100vw-32px))] md:bottom-8">
+                <div className="pointer-events-auto absolute bottom-32 left-4 top-20 w-[min(430px,calc(100vw-32px))]">
                   <div className="lbf-glass h-full overflow-hidden rounded-[36px] p-4">
                     <svg viewBox="0 0 320 290" className="h-full w-full">
                       {HOUSE_ROOMS.map((room) => {
@@ -665,7 +632,7 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 90, opacity: 0 }}
               transition={{ type: "spring", stiffness: 320, damping: 28 }}
-              className="lbf-glass pointer-events-auto absolute bottom-4 left-4 right-4 mx-auto max-w-3xl rounded-[32px] p-5 md:right-48"
+              className="lbf-glass pointer-events-auto absolute bottom-16 left-4 right-4 mx-auto max-h-[65vh] max-w-3xl overflow-y-auto rounded-[32px] p-5 md:right-48"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -705,30 +672,54 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
                 </div>
               )}
 
-              {activeDrawer.poi && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {activeDrawer.poi.phone && (
-                    <a
-                      href={activeDrawer.poi.phone}
-                      className="lbf-droplet-btn flex items-center gap-2 px-4 py-2 text-xs font-bold"
-                    >
-                      <Phone className="h-3.5 w-3.5" />
-                      Zadzwoń
-                    </a>
-                  )}
-                  {activeDrawer.poi.url && (
-                    <a
-                      href={activeDrawer.poi.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="lbf-droplet-btn flex items-center gap-2 px-4 py-2 text-xs font-bold"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Google Maps
-                    </a>
-                  )}
-                </div>
-              )}
+              {activeDrawer.place && (() => {
+                const place = activeDrawer.place;
+                const photo = place.photos?.find((item) => item.googleMapsURI);
+                const location = place.location?.toJSON();
+                return (
+                  <div className="mt-3 space-y-3 text-xs">
+                    {photo?.googleMapsURI && (
+                      <div>
+                        <img src={photo.getURI({ maxWidth: 800, maxHeight: 400 })} alt={place.displayName ?? "Zdjęcie miejsca"} className="h-36 w-full rounded-[20px] object-cover" />
+                        {photo.authorAttributions.map((author, index) => (
+                          <div key={`${author.displayName}-${index}`} className="mt-1 flex items-center gap-1 text-[10px]">
+                            {author.photoURI && <img src={author.photoURI} alt="" className="h-5 w-5 rounded-full" />}
+                            <span>Zdjęcie: {author.uri ? <a href={author.uri} target="_blank" rel="noreferrer" className="underline">{author.displayName}</a> : author.displayName}</span>
+                          </div>
+                        ))}
+                        <a href={photo.googleMapsURI} target="_blank" rel="noreferrer" className="mt-1 inline-block text-[10px] underline">Źródło zdjęcia w Google Maps</a>
+                      </div>
+                    )}
+                    <p translate="no" className="text-xs font-normal">Google Maps</p>
+                    <p>{place.rating != null ? `★ ${place.rating.toLocaleString("pl-PL")} / 5` : "Brak oceny"}</p>
+                    <details>
+                      <summary className="cursor-pointer font-bold">Godziny otwarcia</summary>
+                      {place.regularOpeningHours?.weekdayDescriptions.length
+                        ? place.regularOpeningHours.weekdayDescriptions.map((day) => <p key={day} className="mt-1">{day}</p>)
+                        : <p className="mt-1">Brak informacji o godzinach otwarcia.</p>}
+                    </details>
+                    {place.attributions?.map((attribution, index) => <p key={`${attribution.provider}-${index}`}>Dane: {attribution.providerURI ? <a href={attribution.providerURI} target="_blank" rel="noreferrer" className="underline">{attribution.provider}</a> : attribution.provider}</p>)}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {place.nationalPhoneNumber && <a href={`tel:${place.nationalPhoneNumber.replace(/[^\d+]/g, "")}`} className="lbf-droplet-btn flex items-center gap-2 px-4 py-2 font-bold"><Phone className="h-3.5 w-3.5" />Zadzwoń</a>}
+                      {location && <button type="button" onClick={() => { setStreetViewTarget(location); setActiveDrawer(null); }} className="lbf-droplet-btn px-4 py-2 font-bold">Otwórz Street View</button>}
+                    </div>
+                    {location && (
+                      <div>
+                        <p className="mb-2 font-bold">Wyznacz trasę od domu</p>
+                        <div className="flex flex-wrap gap-2">
+                          {([["DRIVING", "Auto"], ["WALKING", "Pieszo"], ["BICYCLING", "Rower"]] as [RouteMode, string][]).map(([mode, label]) => (
+                            <button key={mode} type="button" disabled={!activeProperty} aria-pressed={routeDestination?.mode === mode} onClick={() => {
+                              setRouteInfo(null);
+                              setRouteDestination((current) => current?.mode === mode ? null : { ...location, mode });
+                            }} className={`rounded-full px-3 py-1.5 font-bold disabled:opacity-50 ${routeDestination?.mode === mode ? "bg-emerald-900 text-white" : "bg-stone-200/70 dark:bg-white/10"}`}>{label}</button>
+                          ))}
+                        </div>
+                        {routeDestination && <p className="mt-2" aria-live="polite">{routeError ?? (routeInfo ? `${routeInfo.distance} · ${routeInfo.duration}` : "Wyznaczanie trasy...")}</p>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {activeDrawer.tool === "studio" && (
                 <form onSubmit={runFluxStudio} className="mt-3 space-y-2.5">

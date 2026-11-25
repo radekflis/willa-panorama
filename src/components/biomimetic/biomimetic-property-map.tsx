@@ -1,10 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
-import Map, { Marker, type MapRef } from "react-map-gl/mapbox";
-import { motion, AnimatePresence } from "framer-motion";
-import type mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
+import React, { useEffect, useRef, useState } from "react";
+import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
 
 export interface PropertyMarkerData {
   id: string;
@@ -13,167 +10,6 @@ export interface PropertyMarkerData {
   lng: number;
   ecoScore: number;
 }
-
-export const BIOPHILIC_MAP_STYLE: mapboxgl.StyleSpecification = {
-  version: 8,
-  name: "Biophilic Organic Light",
-  sources: {
-    "mapbox-streets": {
-      type: "vector",
-      url: "mapbox://mapbox.mapbox-streets-v8",
-    },
-  },
-  glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
-  layers: [
-    {
-      id: "background",
-      type: "background",
-      paint: { "background-color": "#F3EFE6" },
-    },
-    {
-      id: "landuse-parks",
-      type: "fill",
-      source: "mapbox-streets",
-      "source-layer": "landuse",
-      filter: ["in", "class", "park", "wood", "grass", "scrub"],
-      paint: { "fill-color": "#DCE6D5", "fill-opacity": 0.85 },
-    },
-    {
-      id: "water",
-      type: "fill",
-      source: "mapbox-streets",
-      "source-layer": "water",
-      paint: { "fill-color": "#CBE0E0" },
-    },
-    {
-      id: "buildings",
-      type: "fill",
-      source: "mapbox-streets",
-      "source-layer": "building",
-      minzoom: 13,
-      paint: { "fill-color": "#E6E0D4", "fill-opacity": 0.65 },
-    },
-    {
-      id: "roads-minor",
-      type: "line",
-      source: "mapbox-streets",
-      "source-layer": "road",
-      filter: ["in", "class", "street", "street_limited", "service"],
-      layout: { "line-cap": "round", "line-join": "round" },
-      paint: {
-        "line-color": "#FAF8F5",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1, 16, 6],
-      },
-    },
-    {
-      id: "roads-major",
-      type: "line",
-      source: "mapbox-streets",
-      "source-layer": "road",
-      filter: ["in", "class", "primary", "secondary", "trunk", "motorway"],
-      layout: { "line-cap": "round", "line-join": "round" },
-      paint: {
-        "line-color": "#FFFFFF",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 16, 10],
-      },
-    },
-    {
-      id: "place-labels",
-      type: "symbol",
-      source: "mapbox-streets",
-      "source-layer": "place_label",
-      layout: {
-        "text-field": ["get", "name_pl"],
-        "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
-        "text-size": 12,
-      },
-      paint: {
-        "text-color": "#5C665E",
-        "text-halo-color": "#F3EFE6",
-        "text-halo-width": 1.5,
-      },
-    },
-  ],
-};
-
-
-export const BIOLUMINESCENT_DARK_MAP_STYLE: mapboxgl.StyleSpecification = {
-  version: 8,
-  name: "Bioluminescent Night",
-  sources: {
-    "mapbox-streets": {
-      type: "vector",
-      url: "mapbox://mapbox.mapbox-streets-v8",
-    },
-  },
-  glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
-  layers: [
-    { id: "background", type: "background", paint: { "background-color": "#06110E" } },
-    {
-      id: "landuse-parks",
-      type: "fill",
-      source: "mapbox-streets",
-      "source-layer": "landuse",
-      filter: ["in", "class", "park", "wood", "grass", "scrub"],
-      paint: { "fill-color": "#0C261F", "fill-opacity": 0.9 },
-    },
-    {
-      id: "water",
-      type: "fill",
-      source: "mapbox-streets",
-      "source-layer": "water",
-      paint: { "fill-color": "#082026" },
-    },
-    {
-      id: "buildings",
-      type: "fill",
-      source: "mapbox-streets",
-      "source-layer": "building",
-      minzoom: 13,
-      paint: { "fill-color": "#0F2923", "fill-opacity": 0.7 },
-    },
-    {
-      id: "roads-minor",
-      type: "line",
-      source: "mapbox-streets",
-      "source-layer": "road",
-      filter: ["in", "class", "street", "street_limited", "service"],
-      layout: { "line-cap": "round", "line-join": "round" },
-      paint: {
-        "line-color": "#163B32",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1, 16, 5],
-      },
-    },
-    {
-      id: "roads-major",
-      type: "line",
-      source: "mapbox-streets",
-      "source-layer": "road",
-      filter: ["in", "class", "primary", "secondary", "trunk", "motorway"],
-      layout: { "line-cap": "round", "line-join": "round" },
-      paint: {
-        "line-color": "#1D5E4E",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 16, 9],
-      },
-    },
-    {
-      id: "place-labels",
-      type: "symbol",
-      source: "mapbox-streets",
-      "source-layer": "place_label",
-      layout: {
-        "text-field": ["get", "name_pl"],
-        "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
-        "text-size": 12,
-      },
-      paint: {
-        "text-color": "#86EFAC",
-        "text-halo-color": "#06110E",
-        "text-halo-width": 1.5,
-      },
-    },
-  ],
-};
 
 export interface MapCameraTarget {
   lng: number;
@@ -184,16 +20,10 @@ export interface MapCameraTarget {
   ts?: number;
 }
 
-export interface PoiMarkerData {
-  id: string;
-  label: string;
-  category: string;
-  lat: number;
-  lng: number;
-  phone?: string;
-  url?: string;
-  desc: string;
-}
+export type RouteMode = "DRIVING" | "WALKING" | "BICYCLING" | "TRANSIT";
+export type MapPoint = { lat: number; lng: number };
+export type RouteDestination = MapPoint & { mode: RouteMode };
+export type RouteInfo = { distance: string; duration: string };
 
 interface BiomimeticMapProps {
   properties: PropertyMarkerData[];
@@ -201,11 +31,18 @@ interface BiomimeticMapProps {
   selectedId: string | null;
   onHover: (id: string | null) => void;
   onSelect: (id: string) => void;
-  isDark?: boolean;
   cameraTarget?: MapCameraTarget | null;
-  poiMarkers?: PoiMarkerData[];
-  onSelectPoi?: (poi: PoiMarkerData) => void;
+  onSelectGooglePlace: (place: google.maps.places.Place) => void;
+  routeDestination?: RouteDestination | null;
+  routeOrigin?: MapPoint;
+  onRouteInfo?: (info: RouteInfo | null) => void;
+  onRouteError?: (error: string | null) => void;
+  streetViewTarget?: MapPoint | null;
+  onCloseStreetView?: () => void;
 }
+
+const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+let loaderConfigured = false;
 
 export function BiomimeticPropertyMap({
   properties,
@@ -213,47 +50,254 @@ export function BiomimeticPropertyMap({
   selectedId,
   onHover,
   onSelect,
-  isDark = false,
-  cameraTarget = null,
-  poiMarkers = [],
-  onSelectPoi,
+  cameraTarget,
+  onSelectGooglePlace,
+  routeDestination,
+  routeOrigin,
+  onRouteInfo,
+  onRouteError,
+  streetViewTarget,
+  onCloseStreetView,
 }: BiomimeticMapProps) {
-  const mapRef = useRef<MapRef>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const callbacks = useRef({ onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onCloseStreetView });
+  callbacks.current = { onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onCloseStreetView };
+  const markerButtons = useRef(new Map<string, HTMLButtonElement>());
+  const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [mapType, setMapType] = useState<"hybrid" | "roadmap" | "terrain">("hybrid");
+  const [cycling, setCycling] = useState(false);
+  const [streetVisible, setStreetVisible] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [routeWarnings, setRouteWarnings] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!cameraTarget || !mapRef.current) return;
-    mapRef.current.flyTo({
-      center: [cameraTarget.lng, cameraTarget.lat],
+    if (!apiKey || !containerRef.current) return;
+    let cancelled = false;
+    let instance: google.maps.Map | null = null;
+    let clickListener: google.maps.MapsEventListener | undefined;
+    let visibleListener: google.maps.MapsEventListener | undefined;
+    let placeRequest = 0;
+
+    async function initialize() {
+      try {
+        if (!loaderConfigured) {
+          setOptions({ key: apiKey, v: "weekly", language: "pl", region: "PL" });
+          loaderConfigured = true;
+        }
+        const [{ Map }, { Place }] = await Promise.all([
+          importLibrary("maps"),
+          importLibrary("places"),
+          importLibrary("routes"),
+          importLibrary("streetView"),
+        ]);
+        if (cancelled || !containerRef.current) return;
+        instance = new Map(containerRef.current, {
+          center: { lat: 51.1079, lng: 17.0385 },
+          zoom: 11.5,
+          mapTypeId: "hybrid",
+          tilt: 45,
+          renderingType: google.maps.RenderingType.VECTOR,
+          tiltInteractionEnabled: true,
+          headingInteractionEnabled: true,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+        });
+        const panorama = instance.getStreetView();
+        visibleListener = panorama.addListener("visible_changed", () => {
+          const visible = panorama.getVisible();
+          setStreetVisible(visible);
+          if (!visible) callbacks.current.onCloseStreetView?.();
+        });
+        clickListener = instance.addListener("click", async (event: google.maps.MapMouseEvent | google.maps.IconMouseEvent) => {
+          if (!("placeId" in event) || !event.placeId) return;
+          event.stop();
+          const request = ++placeRequest;
+          setError(null);
+          try {
+            const place = new Place({ id: event.placeId, requestedLanguage: "pl" });
+            await place.fetchFields({
+              fields: ["displayName", "nationalPhoneNumber", "websiteURI", "regularOpeningHours", "photos", "location", "rating", "attributions"],
+            });
+            if (!cancelled && request === placeRequest) callbacks.current.onSelectGooglePlace(place);
+          } catch (cause) {
+            console.error("Nie udało się pobrać miejsca Google:", cause);
+            if (!cancelled && request === placeRequest) setError("Nie udało się pobrać informacji o miejscu. Sprawdź dostęp do Places API (New).");
+          }
+        });
+        setMap(instance);
+      } catch (cause) {
+        console.error("Nie udało się załadować Google Maps:", cause);
+        if (!cancelled) setError("Nie udało się załadować Google Maps. Sprawdź klucz, dostęp do API i połączenie.");
+      }
+    }
+
+    void initialize();
+    return () => {
+      cancelled = true;
+      clickListener?.remove();
+      visibleListener?.remove();
+      if (instance) google.maps.event.clearInstanceListeners(instance);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!map) return;
+    map.setMapTypeId(mapType);
+  }, [map, mapType]);
+
+  useEffect(() => {
+    if (!map || !cycling) return;
+    const layer = new google.maps.BicyclingLayer();
+    layer.setMap(map);
+    return () => layer.setMap(null);
+  }, [map, cycling]);
+
+  useEffect(() => {
+    if (!map || !cameraTarget) return;
+    map.moveCamera({
+      center: { lat: cameraTarget.lat, lng: cameraTarget.lng },
       zoom: cameraTarget.zoom,
-      pitch: cameraTarget.pitch ?? 45,
-      bearing: cameraTarget.bearing ?? 0,
-      duration: 1200,
-      essential: true,
+      tilt: cameraTarget.pitch ?? 45,
+      heading: cameraTarget.bearing ?? 0,
     });
-  }, [cameraTarget]);
+  }, [map, cameraTarget]);
 
-  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  useEffect(() => {
+    if (!map) return;
+    class PriceOverlay extends google.maps.OverlayView {
+      private button: HTMLButtonElement;
+      constructor(private property: PropertyMarkerData) {
+        super();
+        this.button = document.createElement("button");
+        this.button.type = "button";
+        this.button.textContent = property.priceShort;
+        this.button.setAttribute("aria-label", `Nieruchomość: ${property.priceShort}`);
+        markerButtons.current.set(property.id, this.button);
+        this.button.addEventListener("click", () => callbacks.current.onSelect(property.id));
+        this.button.addEventListener("mouseenter", () => callbacks.current.onHover(property.id));
+        this.button.addEventListener("mouseleave", () => callbacks.current.onHover(null));
+        google.maps.OverlayView.preventMapHitsAndGesturesFrom(this.button);
+      }
+      onAdd() {
+        this.getPanes()?.overlayMouseTarget.appendChild(this.button);
+      }
+      draw() {
+        const point = this.getProjection().fromLatLngToDivPixel(new google.maps.LatLng(this.property.lat, this.property.lng));
+        if (point) {
+          this.button.style.left = `${point.x}px`;
+          this.button.style.top = `${point.y}px`;
+        }
+      }
+      onRemove() {
+        this.button.remove();
+        markerButtons.current.delete(this.property.id);
+      }
+    }
+    const overlays = properties.map((property) => {
+      const overlay = new PriceOverlay(property);
+      overlay.setMap(map);
+      return overlay;
+    });
+    return () => overlays.forEach((overlay) => overlay.setMap(null));
+  }, [map, properties]);
 
-  if (!token) {
+  useEffect(() => {
+    markerButtons.current.forEach((button, id) => {
+      const highlighted = id === hoveredId || id === selectedId;
+      button.className = `absolute -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-bold shadow-lg backdrop-blur-xl transition-transform hover:scale-110 ${
+        highlighted ? "scale-110 border-emerald-400 bg-emerald-900 text-white" : "border-white/90 bg-white/90 text-stone-900"
+      }`;
+    });
+  }, [map, properties, hoveredId, selectedId]);
+
+  useEffect(() => {
+    if (!map) return;
+    let cancelled = false;
+    let polylines: google.maps.Polyline[] = [];
+    callbacks.current.onRouteInfo?.(null);
+    callbacks.current.onRouteError?.(null);
+    setRouteError(null);
+    setRouteWarnings([]);
+    if (!routeDestination) return;
+    if (!routeOrigin) {
+      setRouteError("Wybierz nieruchomość, aby wyznaczyć trasę.");
+      callbacks.current.onRouteError?.("Wybierz nieruchomość, aby wyznaczyć trasę.");
+      return;
+    }
+    const origin = routeOrigin;
+    const destination = routeDestination;
+    const routeMap = map;
+    async function calculateRoute() {
+      try {
+        const { Route } = await importLibrary("routes");
+        const { routes } = await Route.computeRoutes({
+          origin,
+          destination: { lat: destination.lat, lng: destination.lng },
+          travelMode: destination.mode,
+          fields: ["path", "viewport", "localizedValues", "warnings"],
+          language: "pl",
+        });
+        if (cancelled) return;
+        const route = routes?.[0];
+        if (!route || !route.localizedValues?.distance || !route.localizedValues.duration) {
+          throw new Error("Brak trasy lub informacji o dystansie i czasie.");
+        }
+        polylines = route.createPolylines();
+        polylines.forEach((line) => line.setMap(routeMap));
+        if (route.viewport) routeMap.fitBounds(route.viewport, 80);
+        setRouteWarnings(route.warnings ?? []);
+        callbacks.current.onRouteInfo?.({ distance: route.localizedValues.distance, duration: route.localizedValues.duration });
+      } catch (cause) {
+        console.error("Nie udało się wyznaczyć trasy:", cause);
+        if (!cancelled) {
+          const message = "Nie udało się wyznaczyć trasy. Sprawdź dostęp do Routes API lub wybierz inny środek transportu.";
+          setRouteError(message);
+          callbacks.current.onRouteError?.(message);
+        }
+      }
+    }
+    void calculateRoute();
+    return () => {
+      cancelled = true;
+      polylines.forEach((line) => line.setMap(null));
+    };
+  }, [map, routeOrigin?.lat, routeOrigin?.lng, routeDestination?.lat, routeDestination?.lng, routeDestination?.mode]);
+
+  useEffect(() => {
+    if (!map) return;
+    const panorama = map.getStreetView();
+    if (!streetViewTarget) {
+      panorama.setVisible(false);
+      return;
+    }
+    let cancelled = false;
+    setError(null);
+    const service = new google.maps.StreetViewService();
+    void service.getPanorama({ location: streetViewTarget, radius: 50 }).then(() => {
+      if (cancelled) return;
+      panorama.setPosition(streetViewTarget);
+      panorama.setVisible(true);
+    }).catch((cause) => {
+      console.error("Street View niedostępny:", cause);
+      if (!cancelled) {
+        setError("Street View nie jest dostępny w pobliżu tego miejsca.");
+        callbacks.current.onCloseStreetView?.();
+      }
+    });
+    return () => { cancelled = true; };
+  }, [map, streetViewTarget]);
+
+  if (!apiKey) {
     return (
-      <div className="relative flex h-full w-full flex-col items-center justify-center bg-[#F3EFE6] p-6 text-center">
-        <div className="max-w-md rounded-[28px] bg-white/80 p-6 backdrop-blur-xl border border-white/85 shadow-lg">
-          <p className="text-sm font-semibold text-stone-800">
-            Tryb biofiliczny bez aktywnego tokena Mapbox
-          </p>
-          <p className="mt-1.5 text-xs text-stone-500">
-            Dodaj NEXT_PUBLIC_MAPBOX_TOKEN w .env.local oraz na Vercelu, aby włączyć pełną mapę wektorową.
-          </p>
+      <div className="flex h-full w-full items-center justify-center bg-[#F3EFE6] p-6 text-center">
+        <div className="max-w-md rounded-[28px] border border-white/85 bg-white/80 p-6 shadow-lg backdrop-blur-xl">
+          <p className="text-sm font-semibold text-stone-800">Google Maps wymaga klucza API</p>
+          <p className="mt-2 text-xs text-stone-500">Dodaj NEXT_PUBLIC_GOOGLE_MAPS_API_KEY do .env.local i konfiguracji wdrożenia, a następnie uruchom aplikację ponownie.</p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
-            {properties.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => onSelect(p.id)}
-                className="rounded-full bg-emerald-800 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700"
-              >
-                {p.priceShort}
-              </button>
+            {properties.map((property) => (
+              <button key={property.id} type="button" onClick={() => onSelect(property.id)} className="rounded-full bg-emerald-800 px-3 py-1.5 text-xs font-semibold text-white">{property.priceShort}</button>
             ))}
           </div>
         </div>
@@ -262,87 +306,25 @@ export function BiomimeticPropertyMap({
   }
 
   return (
-    <Map
-      ref={mapRef}
-      mapboxAccessToken={token}
-      initialViewState={{ longitude: 17.0385, latitude: 51.1079, zoom: 11.5 }}
-      style={{ width: "100%", height: "100%" }}
-      mapStyle={isDark ? BIOLUMINESCENT_DARK_MAP_STYLE : BIOPHILIC_MAP_STYLE}
-    >
-      {properties.map((prop) => {
-        const isHighlighted = hoveredId === prop.id || selectedId === prop.id;
-
-        return (
-          <Marker
-            key={prop.id}
-            longitude={prop.lng}
-            latitude={prop.lat}
-            anchor="bottom"
-            style={{ zIndex: isHighlighted ? 50 : 10 }}
-          >
-            <motion.button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelect(prop.id);
-              }}
-              onMouseEnter={() => onHover(prop.id)}
-              onMouseLeave={() => onHover(null)}
-              animate={{
-                scale: isHighlighted ? 1.22 : 1,
-                y: isHighlighted ? -6 : 0,
-              }}
-              whileTap={{ scale: 0.92 }}
-              transition={{ type: "spring", stiffness: 420, damping: 20 }}
-              className={`relative flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold tracking-tight transition-colors duration-300 backdrop-blur-xl border ${
-                isHighlighted
-                  ? "bg-emerald-900 text-white border-emerald-400 shadow-[0_10px_25px_rgba(16,185,129,0.45)]"
-                  : "bg-white/85 text-stone-900 border-white/90 shadow-[0_4px_14px_rgba(0,0,0,0.12)] hover:bg-white"
-              }`}
-            >
-              <AnimatePresence>
-                {isHighlighted && (
-                  <motion.span
-                    initial={{ opacity: 0.7, scale: 0.8 }}
-                    animate={{ opacity: 0, scale: 1.75 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeOut" }}
-                    className="pointer-events-none absolute inset-0 -z-10 rounded-full bg-emerald-400/50"
-                  />
-                )}
-              </AnimatePresence>
-
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  isHighlighted ? "bg-emerald-300" : "bg-emerald-500"
-                }`}
-              />
-              <span>{prop.priceShort}</span>
-            </motion.button>
-          </Marker>
-        );
-      })}
-      {poiMarkers.map((poi) => (
-        <Marker
-          key={poi.id}
-          longitude={poi.lng}
-          latitude={poi.lat}
-          anchor="bottom"
-          style={{ zIndex: 60 }}
-          onClick={(event) => {
-            event.originalEvent.stopPropagation();
-            onSelectPoi?.(poi);
-          }}
-        >
-          <button
-            type="button"
-            className="flex items-center gap-1.5 rounded-full border border-emerald-300/70 bg-white/90 px-3 py-1.5 text-[11px] font-bold text-stone-900 shadow-lg backdrop-blur-xl transition-transform hover:scale-110 dark:bg-emerald-950/90 dark:text-emerald-100"
-          >
-            <span className="h-2 w-2 rounded-full bg-amber-500" />
-            <span>{poi.label}</span>
-          </button>
-        </Marker>
-      ))}
-    </Map>
+    <div className="relative h-full w-full">
+      <div ref={containerRef} className="h-full w-full" aria-label="Interaktywna mapa Google" />
+      {!streetVisible && (
+        <div className="absolute bottom-12 left-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap gap-1 rounded-3xl border border-white/85 bg-white/85 p-1.5 shadow-xl backdrop-blur-xl">
+          {([["hybrid", "Satelita HD"], ["roadmap", "Mapa"], ["terrain", "Teren / Szlaki"]] as const).map(([type, label]) => (
+            <button key={type} type="button" aria-pressed={mapType === type} onClick={() => setMapType(type)} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${mapType === type ? "bg-emerald-900 text-white" : "text-stone-800 hover:bg-stone-200"}`}>{label}</button>
+          ))}
+          <button type="button" aria-pressed={cycling} onClick={() => setCycling((value) => !value)} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${cycling ? "bg-emerald-900 text-white" : "text-stone-800 hover:bg-stone-200"}`}>Rower</button>
+        </div>
+      )}
+      {streetVisible && <button type="button" onClick={() => map?.getStreetView().setVisible(false)} className="absolute bottom-12 left-4 z-10 rounded-full border border-white/85 bg-white/90 px-4 py-2 text-xs font-bold text-stone-900 shadow-xl backdrop-blur-xl">← Powrót do mapy</button>}
+      {(error || routeError || routeWarnings.length > 0) && (
+        <div role="status" className="absolute left-4 top-20 z-10 max-w-sm rounded-2xl bg-white/95 p-3 text-xs text-stone-900 shadow-lg">
+          {error && <p>{error}</p>}
+          {routeError && <p>{routeError}</p>}
+          {routeWarnings.map((warning) => <p key={warning}>{warning}</p>)}
+          {error && <button type="button" onClick={() => setError(null)} className="mt-1 font-bold underline">Zamknij</button>}
+        </div>
+      )}
+    </div>
   );
 }
