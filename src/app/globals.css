@@ -224,3 +224,21 @@ html[data-role="agency"] .lbf-fluid-grid {
 .lbf-droplet-btn:active {
   transform: scale(0.95);
 }
+
+@keyframes lbf-morph {
+  0%, 100% { border-radius: 58% 42% 54% 46% / 52% 48% 52% 48%; }
+  50% { border-radius: 44% 56% 42% 58% / 48% 54% 46% 52%; }
+}
+.lbf-orb {
+  animation: lbf-morph 7.5s ease-in-out infinite;
+  background: radial-gradient(125% 105% at 28% 20%, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.42) 48%, rgba(16,185,129,0.22) 100%);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  border: 1.5px solid rgba(255,255,255,0.9);
+  box-shadow: 0 12px 28px -8px rgba(16,42,35,0.22), inset 0 2px 4px rgba(255,255,255,0.95), inset -4px -6px 12px rgba(16,185,129,0.22);
+}
+.dark .lbf-orb {
+  background: radial-gradient(125% 105% at 28% 20%, rgba(167,243,208,0.28) 0%, rgba(6,78,59,0.68) 55%, rgba(4,47,46,0.88) 100%);
+  border-color: rgba(52,211,153,0.4);
+  box-shadow: 0 14px 32px -8px rgba(0,0,0,0.55), inset 0 1px 3px rgba(167,243,208,0.4);
+}
