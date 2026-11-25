@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import Map, { Marker } from "react-map-gl/mapbox";
+import React, { useEffect, useRef } from "react";
+import Map, { Marker, type MapRef } from "react-map-gl/mapbox";
 import { motion, AnimatePresence } from "framer-motion";
 import type mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -175,6 +175,26 @@ export const BIOLUMINESCENT_DARK_MAP_STYLE: mapboxgl.StyleSpecification = {
   ],
 };
 
+export interface MapCameraTarget {
+  lng: number;
+  lat: number;
+  zoom: number;
+  pitch?: number;
+  bearing?: number;
+  ts?: number;
+}
+
+export interface PoiMarkerData {
+  id: string;
+  label: string;
+  category: string;
+  lat: number;
+  lng: number;
+  phone?: string;
+  url?: string;
+  desc: string;
+}
+
 interface BiomimeticMapProps {
   properties: PropertyMarkerData[];
   hoveredId: string | null;
@@ -182,6 +202,9 @@ interface BiomimeticMapProps {
   onHover: (id: string | null) => void;
   onSelect: (id: string) => void;
   isDark?: boolean;
+  cameraTarget?: MapCameraTarget | null;
+  poiMarkers?: PoiMarkerData[];
+  onSelectPoi?: (poi: PoiMarkerData) => void;
 }
 
 export function BiomimeticPropertyMap({
@@ -191,7 +214,24 @@ export function BiomimeticPropertyMap({
   onHover,
   onSelect,
   isDark = false,
+  cameraTarget = null,
+  poiMarkers = [],
+  onSelectPoi,
 }: BiomimeticMapProps) {
+  const mapRef = useRef<MapRef>(null);
+
+  useEffect(() => {
+    if (!cameraTarget || !mapRef.current) return;
+    mapRef.current.flyTo({
+      center: [cameraTarget.lng, cameraTarget.lat],
+      zoom: cameraTarget.zoom,
+      pitch: cameraTarget.pitch ?? 45,
+      bearing: cameraTarget.bearing ?? 0,
+      duration: 1200,
+      essential: true,
+    });
+  }, [cameraTarget]);
+
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
   if (!token) {
@@ -222,8 +262,13 @@ export function BiomimeticPropertyMap({
   }
 
   return (
-    
-      <Map mapboxAccessToken={token} initialViewState={{longitude:17.0385,latitude:51.1079,zoom:11.5}} style={{width:"100%",height:"100%"}} mapStyle={isDark ? BIOLUMINESCENT_DARK_MAP_STYLE : BIOPHILIC_MAP_STYLE}>
+    <Map
+      ref={mapRef}
+      mapboxAccessToken={token}
+      initialViewState={{ longitude: 17.0385, latitude: 51.1079, zoom: 11.5 }}
+      style={{ width: "100%", height: "100%" }}
+      mapStyle={isDark ? BIOLUMINESCENT_DARK_MAP_STYLE : BIOPHILIC_MAP_STYLE}
+    >
       {properties.map((prop) => {
         const isHighlighted = hoveredId === prop.id || selectedId === prop.id;
 
@@ -277,6 +322,27 @@ export function BiomimeticPropertyMap({
           </Marker>
         );
       })}
+      {poiMarkers.map((poi) => (
+        <Marker
+          key={poi.id}
+          longitude={poi.lng}
+          latitude={poi.lat}
+          anchor="bottom"
+          style={{ zIndex: 60 }}
+          onClick={(event) => {
+            event.originalEvent.stopPropagation();
+            onSelectPoi?.(poi);
+          }}
+        >
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-full border border-emerald-300/70 bg-white/90 px-3 py-1.5 text-[11px] font-bold text-stone-900 shadow-lg backdrop-blur-xl transition-transform hover:scale-110 dark:bg-emerald-950/90 dark:text-emerald-100"
+          >
+            <span className="h-2 w-2 rounded-full bg-amber-500" />
+            <span>{poi.label}</span>
+          </button>
+        </Marker>
+      ))}
     </Map>
   );
 }

@@ -9,6 +9,7 @@ import {
   Check,
   Compass,
   Copy,
+  ExternalLink,
   FileCheck2,
   FolderSearch,
   Home,
@@ -16,13 +17,19 @@ import {
   Megaphone,
   Moon,
   Paintbrush,
+  Phone,
   Sparkles,
   Sun,
   X,
 } from "lucide-react";
 import { BiomimeticPropertyCard } from "./biomimetic-property-card";
-import { BiomimeticPropertyMap, PropertyMarkerData } from "./biomimetic-property-map";
-import { BiomimeticPropertyDetail, PropertyDetailData } from "./biomimetic-property-detail";
+import {
+  BiomimeticPropertyMap,
+  MapCameraTarget,
+  PoiMarkerData,
+  PropertyMarkerData,
+} from "./biomimetic-property-map";
+import { PropertyDetailData } from "./biomimetic-property-detail";
 import { LiquidPriceSlider } from "./liquid-price-slider";
 
 export interface WorkspaceProperty extends PropertyDetailData {
@@ -47,11 +54,15 @@ type FeatureId =
   | "sk"
   | "pl"
   | "ob";
+type ToolId = "studio" | "archive" | "marketing" | "audit" | "contact" | "plans";
 
 interface FeatureNode {
   title: string;
   desc: string;
-  tool?: "studio" | "archive" | "marketing" | "audit" | "contact" | "plans";
+  tool?: ToolId;
+  bearing?: number;
+  pitch?: number;
+  zoom?: number;
 }
 
 interface FeatureConfig {
@@ -60,6 +71,14 @@ interface FeatureConfig {
   icon: React.ElementType;
   isPlan?: boolean;
   nodes?: FeatureNode[];
+}
+
+interface DrawerState {
+  title: string;
+  desc: string;
+  img?: string;
+  tool?: ToolId;
+  poi?: PoiMarkerData;
 }
 
 const ROLE_LABELS: Record<RoleId, string> = {
@@ -81,10 +100,9 @@ const FEATURES: Record<FeatureId, FeatureConfig> = {
     label: "Spacer 3D",
     icon: Compass,
     nodes: [
-      { title: "Model 3D Splat", desc: "Obracalny model 3D Gaussian Splatting (.ksplat) renderowany płynnie w przeglądarce przez Three.js." },
-      { title: "Satelita HD", desc: "Widok satelitarny wysokiej rozdzielczości na bryłę domu, dach i układ działki." },
-      { title: "Rzuty pięter", desc: "Interaktywne rzuty parteru, piętra i zagospodarowania ogrodu." },
-      { title: "Lot drona", desc: "Panoramiczne ujęcia otoczenia, jeziora i linii lasu z lotu ptaka." },
+      { title: "Model 3D z filmu", desc: "Spacer 3D (.ksplat) z jednego filmu smartfonem.", pitch: 70, zoom: 17 },
+      { title: "Satelita HD", desc: "Widok z góry na działkę i nasłonecznienie.", pitch: 0, zoom: 17.5 },
+      { title: "Lot drona 360°", desc: "Przelot wokół bryły domu i otoczenia.", pitch: 65, bearing: 120, zoom: 16 },
     ],
   },
   ok: {
@@ -92,10 +110,9 @@ const FEATURES: Record<FeatureId, FeatureConfig> = {
     label: "Okolica",
     icon: Sparkles,
     nodes: [
-      { title: "Szlaki i przyroda", desc: "Masyw Ślęży, Park Krajobrazowy Doliny Bystrzycy i leśne trasy rowerowe." },
-      { title: "Woda i rekreacja", desc: "Jezioro Mietkowskie, przystań żeglarska i strefa windsurfingu." },
-      { title: "Gastronomia", desc: "Lokalne restauracje, kawiarnie i winnice w promieniu 15 minut." },
-      { title: "Infrastruktura", desc: "Szkoły, apteki, stacja kolejowa i szybki dojazd do Wrocławia." },
+      { title: "Zdrowie", desc: "Przychodnia i apteka — kliknij piny na żywej mapie.", zoom: 13.6, pitch: 38 },
+      { title: "Aktywny wypoczynek", desc: "Rowerowa pętla o długości 18 km.", zoom: 13.2, pitch: 42, bearing: 35 },
+      { title: "Woda", desc: "Przystań żeglarska i windsurfing.", zoom: 13.5, pitch: 45, bearing: -40 },
     ],
   },
   zap: {
@@ -103,8 +120,8 @@ const FEATURES: Record<FeatureId, FeatureConfig> = {
     label: "Zapytaj właściciela",
     icon: Mail,
     nodes: [
-      { title: "Formularz", desc: "Wyślij bezpośrednie pytanie do właściciela bez pośredników.", tool: "contact" },
-      { title: "Prezentacja", desc: "Umów prywatną wizytę na miejscu lub wideospacer na żywo.", tool: "contact" },
+      { title: "Bezpośredni kontakt", desc: "0% prowizji przy zakupie bezpośrednim.", tool: "contact" },
+      { title: "Umów prezentację", desc: "Wizyta na miejscu lub wideospacer.", tool: "contact" },
     ],
   },
   ar: {
@@ -112,10 +129,8 @@ const FEATURES: Record<FeatureId, FeatureConfig> = {
     label: "Archiwum",
     icon: FolderSearch,
     nodes: [
-      { title: "Szukaj „Jodła”", desc: "Wyszukiwarka po treści zdjęć i tagach AI (np. jodła, basen, taras).", tool: "archive" },
-      { title: "Zdjęcia", desc: "Wszystkie ujęcia posegregowane automatycznie na strefy domu.", tool: "archive" },
-      { title: "Wideo", desc: "Filmy z drona i wnętrz przygotowane pod konwersję 3D." },
-      { title: "Import lokalny", desc: "Szybkie wgrywanie całych folderów z dysku lub iPada." },
+      { title: "Szukaj „Jodła”", desc: "Wyszukiwarka po treści zdjęć i wideo AI.", tool: "archive" },
+      { title: "Film pod 3D", desc: "Wgraj film ze smartfona pod spacer 3D.", tool: "archive" },
     ],
   },
   st: {
@@ -123,9 +138,8 @@ const FEATURES: Record<FeatureId, FeatureConfig> = {
     label: "Studio AI",
     icon: Paintbrush,
     nodes: [
-      { title: "Prompt FLUX.1", desc: "Zmiana zdjęcia poleceniem tekstowym w otwartym modelu FLUX.1 Kontext.", tool: "studio" },
-      { title: "Kopie 2K/4K/8K", desc: "Wynik zapisywany wyłącznie jako kopia — oryginał pozostaje nietknięty.", tool: "studio" },
-      { title: "Ochrona kosztów", desc: "Architektura Dwóch Biegów: szkice za ułamek grosza, finał w 4K/8K." },
+      { title: "FLUX.1 Kontext", desc: "Otwarty model FLUX.1 na Fal.ai — edycja fotografii tekstem.", tool: "studio" },
+      { title: "Kopie 2K / 4K / 8K", desc: "Oryginał pozostaje nietknięty, wynik powstaje jako kopia.", tool: "studio" },
     ],
   },
   op: {
@@ -133,18 +147,17 @@ const FEATURES: Record<FeatureId, FeatureConfig> = {
     label: "Opis i Potencjał",
     icon: Sparkles,
     nodes: [
-      { title: "8 parametrów", desc: "Cena, metraż, pokoje, Bio-Index 97%, ekspozycja, działka, otoczenie, status." },
-      { title: "Opis AI", desc: "Długi, edytowalny opis wygenerowany z głębokiej analizy zdjęć." },
-      { title: "Potencjał lokalizacji", desc: "Analiza wzrostu wartości, przyrody, dojazdu i potencjału najmu." },
+      { title: "8 parametrów", desc: "Wnioski wyciągnięte z analizy zdjęć i mapy." },
+      { title: "Potencjał lokalizacji", desc: "Analiza wartości, infrastruktury i przyrody." },
     ],
   },
   mk: {
     id: "mk",
-    label: "Marketing",
+    label: "Marketing & MLS",
     icon: Megaphone,
     nodes: [
-      { title: "SEO & Google Ads", desc: "Gotowe tytuły, meta opisy i słowa kluczowe bez haraczu portali.", tool: "marketing" },
-      { title: "Facebook / Grupy", desc: "Gotowy post sprzedażowy z kluczowymi parametrami i linkiem.", tool: "marketing" },
+      { title: "Sieć MLS (Felix Blau)", desc: "Multiplikacja dotarcia przez sieć agencji MLS.", tool: "marketing" },
+      { title: "SEO / Google Ads / FB", desc: "Gotowe pakiety reklamowe i posty.", tool: "marketing" },
     ],
   },
   au: {
@@ -152,8 +165,8 @@ const FEATURES: Record<FeatureId, FeatureConfig> = {
     label: "Audytor Umów",
     icon: FileCheck2,
     nodes: [
-      { title: "Audyt PL / UE", desc: "Sprawdzenie zadatku, terminów i ryzyk w umowie przedwstępnej.", tool: "audit" },
-      { title: "Wgraj skan OCR", desc: "Odczyt trudnych plików PDF i zdjęć dokumentów (Tesseract OCR).", tool: "audit" },
+      { title: "Audyt PL / UE", desc: "Kontrola zadatku, terminów i ryzyk.", tool: "audit" },
+      { title: "Skan OCR", desc: "Odczyt skanów i PDF-ów.", tool: "audit" },
     ],
   },
   sk: {
@@ -161,8 +174,8 @@ const FEATURES: Record<FeatureId, FeatureConfig> = {
     label: "Skrzynka",
     icon: Mail,
     nodes: [
-      { title: "Zapytania", desc: "Bezpośrednie wiadomości od kupujących zainteresowanych ofertą." },
-      { title: "Umówione wizyty", desc: "Kalendarz prezentacji na żywo i spotkań online." },
+      { title: "Zapytania", desc: "Wiadomości od kupujących i agentów MLS." },
+      { title: "Prezentacje", desc: "Harmonogram spotkań." },
     ],
   },
   pl: {
@@ -170,8 +183,8 @@ const FEATURES: Record<FeatureId, FeatureConfig> = {
     label: "Pakiety",
     icon: Sparkles,
     nodes: [
-      { title: "Właściciel Direct", desc: "49 zł / projekt — pełna prezentacja, Studio FLUX.1, SEO/Ads, BLIK/karta.", tool: "plans" },
-      { title: "Agencja White-Label", desc: "199 zł / mies. — własna marka, wiele obiektów i audytor umów.", tool: "plans" },
+      { title: "Właściciel Direct", desc: "49 zł / projekt — Living Map-OS, FLUX.1, 3D i MLS.", tool: "plans" },
+      { title: "Agencja White-Label", desc: "199 zł / mies. — marka i portfel obiektów.", tool: "plans" },
     ],
   },
   ob: {
@@ -179,20 +192,20 @@ const FEATURES: Record<FeatureId, FeatureConfig> = {
     label: "Moje obiekty",
     icon: Building2,
     nodes: [
-      { title: "Portfel Agencji", desc: "Przełączanie wszystkich nieruchomości prowadzonych przez agencję." },
-      { title: "Marka White-Label", desc: "Własne logo, domena i kolorystyka prezentacji dla klientów." },
+      { title: "Portfel Agencji", desc: "Wszystkie nieruchomości na jednej żywej mapie." },
+      { title: "Marka White-Label", desc: "Własne logo, kolory i domena." },
     ],
   },
 };
 
 const HOUSE_ROOMS = [
-  { id: "salon", name: "Salon", x: 18, y: 20, w: 152, h: 112, img: "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=900&q=80", desc: "58 m² z panoramicznym przeszkleniem na południe i wyjściem na taras." },
-  { id: "kuchnia", name: "Kuchnia", x: 178, y: 20, w: 124, h: 72, img: "https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=900&q=80", desc: "Wyspa z naturalnego kamienia, ukryta spiżarnia i światło poranne." },
-  { id: "sypialnia", name: "Sypialnia", x: 178, y: 100, w: 124, h: 74, img: "https://images.unsplash.com/photo-1600585154526-990dced4db0d?auto=format&fit=crop&w=900&q=80", desc: "Master bedroom z prywatną garderobą i widokiem na korony drzew." },
-  { id: "lazienka", name: "Łazienka", x: 18, y: 140, w: 72, h: 66, img: "https://images.unsplash.com/photo-1600566752355-35792bedcfea?auto=format&fit=crop&w=900&q=80", desc: "Strefa kąpielowa z wolnostojącą wanną i naturalnym światłem." },
-  { id: "gabinet", name: "Gabinet", x: 98, y: 140, w: 72, h: 66, img: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80", desc: "Cicha przestrzeń do pracy zdalnej ze światłowodem." },
-  { id: "taras", name: "Taras", x: 18, y: 214, w: 152, h: 58, img: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=900&q=80", desc: "Modrzewiowy taras z basenem i ekspozycją południowo-zachodnią." },
-  { id: "ogrod", name: "Ogród", x: 178, y: 182, w: 124, h: 90, img: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80", desc: "1 000 m² dojrzałego ogrodu ze starodrzewem, jodłami i szklarnią." },
+  { id: "salon", name: "Salon · Pd-Zach", x: 18, y: 20, w: 152, h: 112, bearing: 215, pitch: 72, img: "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=900&q=80", desc: "Widok przez południowo-zachodnie przeszklenia — kamera obraca się w stronę słońca." },
+  { id: "kuchnia", name: "Kuchnia · Wsch", x: 178, y: 20, w: 124, h: 72, bearing: 90, pitch: 68, img: "https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=900&q=80", desc: "Poranne światło wschodnie i wyspa z kamienia." },
+  { id: "sypialnia", name: "Sypialnia · Pn", x: 178, y: 100, w: 124, h: 74, bearing: 0, pitch: 66, img: "https://images.unsplash.com/photo-1600585154526-990dced4db0d?auto=format&fit=crop&w=900&q=80", desc: "Cisza od północy i widok na korony drzew." },
+  { id: "lazienka", name: "Łazienka", x: 18, y: 140, w: 72, h: 66, bearing: 270, pitch: 62, img: "https://images.unsplash.com/photo-1600566752355-35792bedcfea?auto=format&fit=crop&w=900&q=80", desc: "Strefa kąpielowa z naturalnym światłem." },
+  { id: "gabinet", name: "Gabinet", x: 98, y: 140, w: 72, h: 66, bearing: 315, pitch: 64, img: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80", desc: "Cichy gabinet ze światłowodem." },
+  { id: "taras", name: "Taras · Południe", x: 18, y: 214, w: 152, h: 58, bearing: 180, pitch: 75, img: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=900&q=80", desc: "Perspektywa południowa z tarasu i basenu (180°)." },
+  { id: "ogrod", name: "Ogród · Zachód", x: 178, y: 182, w: 124, h: 90, bearing: 260, pitch: 70, img: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80", desc: "Dojrzały ogród ze starodrzewem, jodłami i szklarnią." },
 ];
 
 export function PropTechWorkspace({ properties }: { properties: WorkspaceProperty[] }) {
@@ -200,21 +213,14 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   const [isDark, setIsDark] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<"Lokalizacja" | "Cena" | null>(null);
-  const [maxPrice, setMaxPrice] = useState(5000000);
+  const [showFilter, setShowFilter] = useState(false);
+  const [maxPrice, setMaxPrice] = useState(5_000_000);
   const [locationQuery, setLocationQuery] = useState("");
   const [savedIds, setSavedIds] = useState<string[]>([]);
-
-  // Stan Map-OS (aktywna funkcja + dolna szuflada)
   const [activeFeature, setActiveFeature] = useState<FeatureId | null>(null);
-  const [activeSheet, setActiveSheet] = useState<{
-    title: string;
-    desc: string;
-    img?: string;
-    tool?: FeatureNode["tool"];
-  } | null>(null);
-
-  // Mini-narzędzia w dolnej szufladzie
+  const [activeDrawer, setActiveDrawer] = useState<DrawerState | null>(null);
+  const [cameraTarget, setCameraTarget] = useState<MapCameraTarget | null>(null);
+  const [studioSource, setStudioSource] = useState<string | null>(null);
   const [studioPrompt, setStudioPrompt] = useState("");
   const [studioQuality, setStudioQuality] = useState<"2K" | "4K" | "8K">("4K");
   const [studioLoading, setStudioLoading] = useState(false);
@@ -230,13 +236,111 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
       setIsDark(dark);
       document.documentElement.classList.toggle("dark", dark);
       const saved = window.localStorage.getItem("lbf_saved_ids");
-      if (saved) setSavedIds(JSON.parse(saved));
-    } catch {}
+      if (saved) setSavedIds(JSON.parse(saved) as string[]);
+    } catch {
+      setSavedIds([]);
+    }
   }, []);
 
+  const filteredProperties = useMemo(() => {
+    const query = locationQuery.trim().toLocaleLowerCase("pl");
+    return properties.filter(
+      (property) =>
+        property.priceNumeric <= maxPrice &&
+        (!query ||
+          property.location.toLocaleLowerCase("pl").includes(query) ||
+          property.title.toLocaleLowerCase("pl").includes(query))
+    );
+  }, [locationQuery, maxPrice, properties]);
+
+  const activeProperty = useMemo(
+    () => properties.find((property) => property.id === selectedId) ?? filteredProperties[0] ?? properties[0],
+    [filteredProperties, properties, selectedId]
+  );
+
+  const markers: PropertyMarkerData[] = useMemo(
+    () =>
+      filteredProperties.map((property) => ({
+        id: property.id,
+        priceShort: property.priceShort,
+        lat: property.lat,
+        lng: property.lng,
+        ecoScore: property.ecoScore ?? 94,
+      })),
+    [filteredProperties]
+  );
+
+  const poiMarkers = useMemo<PoiMarkerData[]>(() => {
+    if (!activeProperty || activeFeature !== "ok") return [];
+    const googleMaps = (query: string) =>
+      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    return [
+      {
+        id: "health",
+        label: "Przychodnia Zdrowia",
+        category: "Zdrowie",
+        lat: activeProperty.lat + 0.018,
+        lng: activeProperty.lng - 0.014,
+        phone: "tel:+48713250000",
+        url: googleMaps("Przychodnia Zdrowia Mietków"),
+        desc: "Placówka medyczna w kilku minutach od nieruchomości.",
+      },
+      {
+        id: "pharmacy",
+        label: "Apteka",
+        category: "Zdrowie",
+        lat: activeProperty.lat + 0.011,
+        lng: activeProperty.lng + 0.024,
+        url: googleMaps("Apteka Mietków"),
+        desc: "Apteka w centrum osiedla.",
+      },
+      {
+        id: "bike",
+        label: "Szlak Rowerowy · 18 km",
+        category: "Rekreacja",
+        lat: activeProperty.lat - 0.016,
+        lng: activeProperty.lng + 0.032,
+        url: googleMaps("szlak rowerowy Jezioro Mietkowskie"),
+        desc: "Malownicza pętla wokół jeziora, pól i lasu.",
+      },
+      {
+        id: "marina",
+        label: "Przystań & Windsurfing",
+        category: "Woda",
+        lat: activeProperty.lat - 0.028,
+        lng: activeProperty.lng - 0.021,
+        url: googleMaps("Przystań Jezioro Mietkowskie windsurfing"),
+        desc: "Marina, plaża i strefa windsurfingowa.",
+      },
+    ];
+  }, [activeFeature, activeProperty]);
+
+  const flyToProperty = (overrides: Partial<MapCameraTarget>) => {
+    if (!activeProperty) return;
+    setCameraTarget({
+      lng: activeProperty.lng,
+      lat: activeProperty.lat,
+      zoom: 17.2,
+      pitch: 45,
+      bearing: 0,
+      ...overrides,
+      ts: Date.now(),
+    });
+  };
+
+  const selectFeature = (id: FeatureId) => {
+    setActiveFeature(id);
+    setActiveDrawer(null);
+    setStudioResult(null);
+    setStudioError(null);
+    if (id === "ok") {
+      flyToProperty({ zoom: 13.6, pitch: 38, bearing: 0 });
+    }
+  };
+
   const toggleDark = () => {
-    setIsDark((prev) => {
-      const next = !prev;
+    setIsDark((current) => {
+      const next = !current;
       document.documentElement.classList.toggle("dark", next);
       window.localStorage.setItem("lbf_dark_mode", next ? "1" : "0");
       return next;
@@ -244,73 +348,54 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   };
 
   const toggleSave = (id: string) => {
-    setSavedIds((prev) => {
-      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+    setSavedIds((current) => {
+      const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
       window.localStorage.setItem("lbf_saved_ids", JSON.stringify(next));
       return next;
     });
   };
 
-  const filteredProperties = useMemo(() => {
-    return properties.filter((p) => {
-      const priceOk = p.priceNumeric <= maxPrice;
-      const q = locationQuery.trim().toLowerCase();
-      const locOk =
-        !q || p.location.toLowerCase().includes(q) || p.title.toLowerCase().includes(q);
-      return priceOk && locOk;
-    });
-  }, [properties, maxPrice, locationQuery]);
-
-  const activeProperty = useMemo(
-    () => properties.find((p) => p.id === selectedId) ?? filteredProperties[0] ?? properties[0],
-    [properties, filteredProperties, selectedId]
-  );
-
-  const markers: PropertyMarkerData[] = useMemo(
-    () =>
-      filteredProperties.map((p) => ({
-        id: p.id,
-        priceShort: p.priceShort,
-        lat: p.lat,
-        lng: p.lng,
-        ecoScore: p.ecoScore ?? 94,
-      })),
-    [filteredProperties]
-  );
-
-  const runFluxStudio = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!studioPrompt.trim() || !activeProperty) return;
+  const runFluxStudio = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const imageUrl = studioSource ?? activeProperty?.imageUrl;
+    if (!studioPrompt.trim() || !imageUrl) return;
     setStudioLoading(true);
     setStudioError(null);
     try {
-      const res = await fetch("/api/studio/edit-image", {
+      const response = await fetch("/api/studio/edit-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageUrl: activeProperty.imageUrl,
-          prompt: studioPrompt.trim(),
-          quality: studioQuality,
-        }),
+        body: JSON.stringify({ imageUrl, prompt: studioPrompt.trim(), quality: studioQuality }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.url) {
-        setStudioResult(data.url);
-      } else {
-        setStudioError(data.error || "Nie udało się wygenerować obrazu.");
+      const data = (await response.json()) as { url?: string; error?: string };
+      if (!response.ok || !data.url) {
+        setStudioError(data.error ?? "Nie udało się wygenerować obrazu.");
+        return;
       }
-    } catch {
-      setStudioError("Błąd połączenia ze Studiem AI.");
+      setStudioResult(data.url);
+    } catch (error) {
+      setStudioError(error instanceof Error ? error.message : "Błąd połączenia ze Studiem AI.");
     } finally {
       setStudioLoading(false);
     }
   };
 
-  const featureConfig = activeFeature ? FEATURES[activeFeature] : null;
+  const copyMarketing = async () => {
+    if (!activeProperty) return;
+    const text = `${activeProperty.title} — ${activeProperty.location}, ${activeProperty.area} m², ${activeProperty.price}. Living Map-OS + spacer 3D. MLS: Felix Blau.`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setStudioError("Nie udało się skopiować treści. Zaznacz tekst ręcznie.");
+    }
+  };
+
+  const feature = activeFeature ? FEATURES[activeFeature] : null;
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-[#F3EFE6] dark:bg-[#06110E] text-stone-900 dark:text-stone-100 transition-colors duration-500">
-      {/* WARSTWA 0: Prawdziwa mapa Mapbox GL */}
+    <div className="relative h-screen w-screen overflow-hidden bg-[#F3EFE6] text-stone-900 transition-colors duration-500 dark:bg-[#06110E] dark:text-stone-100">
       <div className="absolute inset-0 z-0">
         <BiomimeticPropertyMap
           properties={markers}
@@ -319,476 +404,435 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
           onHover={setHoveredId}
           onSelect={(id) => {
             setSelectedId(id);
-            setActiveFeature(role === "buyer" ? "dom" : "op");
+            selectFeature(role === "buyer" ? "dom" : "op");
           }}
           isDark={isDark}
+          cameraTarget={cameraTarget}
+          poiMarkers={poiMarkers}
+          onSelectPoi={(poi) =>
+            setActiveDrawer({ title: poi.label, desc: poi.desc, poi })
+          }
         />
       </div>
 
-      {/* GÓRA ŚRODEK: Kapsuła 3 Wydań + Filtr + Dzień/Noc */}
-      <header className="fixed left-1/2 top-4 z-40 -translate-x-1/2 flex flex-col items-center gap-2 max-w-[96vw]">
-        <div className="flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-emerald-950/75 p-1.5 backdrop-blur-2xl border border-white/85 dark:border-emerald-400/25 shadow-xl">
-          {(Object.keys(ROLE_LABELS) as RoleId[]).map((r) => (
+      <div className="pointer-events-none absolute inset-0 z-20">
+        <header className="pointer-events-auto absolute left-1/2 top-4 z-40 flex max-w-[96vw] -translate-x-1/2 flex-col items-center gap-2">
+          <div className="flex items-center gap-1.5 rounded-full border border-white/85 bg-white/80 p-1.5 shadow-xl backdrop-blur-2xl dark:border-emerald-400/25 dark:bg-emerald-950/75">
+            {(Object.keys(ROLE_LABELS) as RoleId[]).map((roleId) => (
+              <button
+                key={roleId}
+                type="button"
+                onClick={() => {
+                  setRole(roleId);
+                  setActiveFeature(null);
+                  setActiveDrawer(null);
+                }}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                  role === roleId
+                    ? "bg-emerald-900 text-white shadow dark:bg-emerald-400 dark:text-emerald-950"
+                    : "text-stone-700 hover:bg-black/5 dark:text-stone-200 dark:hover:bg-white/10"
+                }`}
+              >
+                {ROLE_LABELS[roleId]}
+              </button>
+            ))}
+            <span className="mx-1 h-4 w-px bg-stone-300/70 dark:bg-emerald-700/50" />
             <button
-              key={r}
               type="button"
-              onClick={() => {
-                setRole(r);
-                setActiveFeature(null);
-                setActiveSheet(null);
-              }}
-              className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
-                role === r
-                  ? "bg-emerald-900 dark:bg-emerald-400 text-white dark:text-emerald-950 shadow"
-                  : "text-stone-700 dark:text-stone-200 hover:bg-black/5 dark:hover:bg-white/10"
-              }`}
+              onClick={() => setShowFilter((visible) => !visible)}
+              className="rounded-full px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-black/5 dark:text-stone-200 dark:hover:bg-white/10"
             >
-              {ROLE_LABELS[r]}
+              Filtr
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={toggleDark}
+              aria-label="Przełącz Dzień / Noc"
+              className="flex h-8 items-center gap-1 rounded-full bg-white/70 px-2 text-xs text-stone-800 dark:bg-emerald-900/70 dark:text-emerald-300"
+            >
+              {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+              <span className="hidden sm:inline">{isDark ? "Dzień" : "Noc"}</span>
+            </button>
+          </div>
 
-          <span className="mx-1 h-4 w-px bg-stone-300/70 dark:bg-emerald-700/50" />
+          <AnimatePresence>
+            {showFilter && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="w-[min(360px,92vw)] rounded-[28px] border border-white/85 bg-white/88 px-5 py-3 shadow-xl backdrop-blur-2xl dark:border-emerald-400/25 dark:bg-emerald-950/88"
+              >
+                <LiquidPriceSlider value={maxPrice} onChange={setMaxPrice} />
+                <input
+                  type="text"
+                  value={locationQuery}
+                  onChange={(event) => setLocationQuery(event.target.value)}
+                  placeholder="Lokalizacja lub nazwa nieruchomości"
+                  className="mt-2 w-full rounded-full border border-stone-300/70 bg-white/80 px-3.5 py-1.5 text-xs focus:outline-none dark:border-emerald-600/40 dark:bg-emerald-950"
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </header>
 
-          <button
-            type="button"
-            onClick={() => setActiveFilter(activeFilter === "Cena" ? null : "Cena")}
-            className="rounded-full px-3 py-1.5 text-xs font-medium text-stone-700 dark:text-stone-200 hover:bg-black/5 dark:hover:bg-white/10"
+        {!feature && (
+          <aside
+            className="no-scrollbar pointer-events-auto absolute bottom-6 left-4 top-20 hidden w-[350px] space-y-4 overflow-y-auto pr-1 md:block"
+            style={{ maskImage: "linear-gradient(to bottom, transparent 0%, black 4%, black 96%, transparent 100%)" }}
           >
-            Cena
-          </button>
+            {filteredProperties.map((property) => (
+              <BiomimeticPropertyCard
+                key={property.id}
+                id={property.id}
+                title={property.title}
+                location={property.location}
+                price={property.price}
+                area={property.area}
+                rooms={property.rooms}
+                imageUrl={property.imageUrl}
+                ecoScore={property.ecoScore}
+                isLiked={savedIds.includes(property.id)}
+                onToggleLike={toggleSave}
+                onSelect={(id) => {
+                  setSelectedId(id);
+                  selectFeature(role === "buyer" ? "dom" : "op");
+                }}
+                onHoverChange={setHoveredId}
+              />
+            ))}
+          </aside>
+        )}
 
-          <button
-            type="button"
-            onClick={toggleDark}
-            aria-label="Tryb Dzień / Noc"
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/70 dark:bg-emerald-900/70 text-stone-800 dark:text-emerald-300"
-          >
-            {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-          </button>
-        </div>
+        <nav
+          aria-label="Funkcje Living Map-OS"
+          className="no-scrollbar pointer-events-auto absolute bottom-5 right-3 top-20 flex flex-col items-end gap-2.5 overflow-y-auto py-1 pr-0.5"
+        >
+          {ROLE_FEATURES[role].map((featureId, index) => {
+            const item = FEATURES[featureId];
+            const Icon = item.icon;
+            const isActive = activeFeature === featureId;
+            return (
+              <button
+                key={featureId}
+                type="button"
+                onClick={() => selectFeature(featureId)}
+                className="group flex items-center gap-2.5 focus:outline-none"
+              >
+                <span
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold shadow-sm backdrop-blur-xl transition-all ${
+                    isActive
+                      ? "border-emerald-400 bg-emerald-900 text-white shadow-lg"
+                      : "border-white/85 bg-white/80 text-stone-800 dark:border-emerald-400/25 dark:bg-emerald-950/75 dark:text-stone-100"
+                  }`}
+                >
+                  {item.label}
+                </span>
+                <span
+                  style={{ animationDelay: `-${index * 1.4}s` }}
+                  className={`lbf-droplet-3d flex h-12 w-12 items-center justify-center text-emerald-950 dark:text-emerald-100 ${
+                    isActive ? "ring-2 ring-amber-300" : ""
+                  }`}
+                >
+                  <Icon className="h-5 w-5" />
+                </span>
+              </button>
+            );
+          })}
+        </nav>
 
         <AnimatePresence>
-          {activeFilter && !activeFeature && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              className="rounded-[28px] bg-white/85 dark:bg-emerald-950/85 px-5 py-3 backdrop-blur-2xl border border-white/85 dark:border-emerald-400/25 shadow-xl"
+          {feature && (
+            <motion.section
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 pointer-events-none"
             >
-              <LiquidPriceSlider value={maxPrice} onChange={setMaxPrice} />
-              <input
-                type="text"
-                value={locationQuery}
-                onChange={(e) => setLocationQuery(e.target.value)}
-                placeholder="Filtruj lokalizację lub nazwę..."
-                className="mt-2 w-full rounded-full border border-stone-300/70 dark:border-emerald-600/40 bg-white/80 dark:bg-emerald-950 px-3.5 py-1.5 text-xs focus:outline-none"
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </header>
-
-      {/* LEWA STRONA (widok mapy głównej): Pływające karty nieruchomości */}
-      {!activeFeature && (
-        <aside
-          className="fixed bottom-6 left-4 top-20 z-20 hidden md:block w-[360px] overflow-y-auto pr-1 space-y-4 no-scrollbar"
-          style={{
-            maskImage:
-              "linear-gradient(to bottom, transparent 0%, black 3%, black 96%, transparent 100%)",
-          }}
-        >
-          {filteredProperties.map((property) => (
-            <BiomimeticPropertyCard
-              key={property.id}
-              id={property.id}
-              title={property.title}
-              location={property.location}
-              price={property.price}
-              area={property.area}
-              rooms={property.rooms}
-              imageUrl={property.imageUrl}
-              ecoScore={property.ecoScore}
-              isLiked={savedIds.includes(property.id)}
-              onToggleLike={toggleSave}
-              onSelect={(id) => {
-                setSelectedId(id);
-                setActiveFeature(role === "buyer" ? "dom" : "op");
-              }}
-              onHoverChange={setHoveredId}
-            />
-          ))}
-        </aside>
-      )}
-
-      {/* PRAWA STRONA (od góry do dołu): Pionowy dock biomimetycznych kropli Liquid Glass */}
-      <nav
-        aria-label="Funkcje portalu"
-        className="fixed right-4 top-20 bottom-6 z-30 flex flex-col items-end gap-2.5 overflow-y-auto py-1 pr-0.5 no-scrollbar"
-      >
-        {ROLE_FEATURES[role].map((fId, idx) => {
-          const item = FEATURES[fId];
-          const Icon = item.icon;
-          const isActive = activeFeature === fId;
-          return (
-            <motion.button
-              key={fId}
-              type="button"
-              whileHover={{ scale: 1.05, x: -3 }}
-              whileTap={{ scale: 0.94 }}
-              onClick={() => {
-                setActiveFeature(fId);
-                setActiveSheet(null);
-                setStudioResult(null);
-                setStudioError(null);
-              }}
-              className="group flex items-center gap-2.5 focus:outline-none"
-            >
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-semibold backdrop-blur-xl border transition-all ${
-                  isActive
-                    ? "bg-emerald-900 text-white border-emerald-400 shadow-lg"
-                    : "bg-white/80 dark:bg-emerald-950/75 text-stone-800 dark:text-stone-100 border-white/85 dark:border-emerald-400/25 shadow-sm"
-                }`}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveFeature(null);
+                  setActiveDrawer(null);
+                }}
+                className="lbf-droplet-3d pointer-events-auto absolute left-4 top-4 flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold"
               >
-                {item.label}
-              </span>
-              <span
-                style={{ animationDelay: `-${idx * 1.4}s` }}
-                className={`lbf-orb flex h-12 w-12 items-center justify-center transition-all ${
-                  isActive
-                    ? "!bg-emerald-800 !text-white ring-2 ring-emerald-400"
-                    : "text-emerald-950 dark:text-emerald-200"
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-              </span>
-            </motion.button>
-          );
-        })}
-      </nav>
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Mapa główna
+              </button>
 
-      {/* NAKŁADKA MAP-OS: Mapa wybranej funkcji (Plan domu w Liquid Glass LUB konstelacja węzłów) */}
-      <AnimatePresence>
-        {featureConfig && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-25 bg-[#F3EFE6]/88 dark:bg-[#06110E]/90 backdrop-blur-xl"
-          >
-            {/* Delikatne izolinie topograficzne w tle mapy funkcji */}
-            <svg
-              viewBox="0 0 800 600"
-              preserveAspectRatio="xMidYMid slice"
-              className="pointer-events-none absolute inset-0 h-full w-full opacity-30 dark:opacity-20"
-            >
-              {[1, 2, 3, 4, 5, 6, 7].map((k) => (
-                <ellipse
-                  key={k}
-                  cx="400"
-                  cy="300"
-                  rx={k * 65}
-                  ry={k * 44}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={k % 2 === 0 ? 1.2 : 0.6}
-                  className="text-emerald-800 dark:text-emerald-400"
-                />
-              ))}
-            </svg>
-
-            {/* Powrót na prawdziwą mapę */}
-            <button
-              type="button"
-              onClick={() => {
-                setActiveFeature(null);
-                setActiveSheet(null);
-              }}
-              className="lbf-droplet-btn fixed left-4 top-4 z-40 flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-stone-900"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              <span>Mapa główna</span>
-            </button>
-
-            {/* Tytuł mapy funkcji */}
-            <div className="pointer-events-none fixed left-1/2 top-20 z-30 -translate-x-1/2 text-center">
-              <div className="text-[11px] font-semibold uppercase tracking-widest text-emerald-800 dark:text-emerald-400">
-                {activeProperty?.title || "Willa Panorama"}
+              <div className="pointer-events-none absolute left-1/2 top-20 -translate-x-1/2 text-center">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-800 drop-shadow-sm dark:text-emerald-300">
+                  {activeProperty?.title ?? "Willa Panorama"}
+                </p>
+                <h2 className="text-xl font-bold tracking-tight drop-shadow-md">{feature.label}</h2>
               </div>
-              <h2 className="text-xl font-bold tracking-tight">{featureConfig.label}</h2>
-            </div>
 
-            {/* WARIANT A: Interaktywny plan domu w płynnym szkle */}
-            {featureConfig.isPlan ? (
-              <div className="relative flex h-full w-full items-center justify-center px-4 pt-12 pb-28 md:pr-44">
-                <div className="w-full max-w-xl rounded-[36px] bg-white/55 dark:bg-emerald-950/50 p-4 backdrop-blur-2xl border border-white/85 dark:border-emerald-400/25 shadow-2xl">
-                  <svg viewBox="0 0 320 290" className="w-full h-auto">
-                    {HOUSE_ROOMS.map((room) => {
-                      const selected = activeSheet?.title === room.name;
-                      return (
-                        <g
-                          key={room.id}
-                          onClick={() =>
-                            setActiveSheet({
-                              title: room.name,
-                              desc: room.desc,
-                              img: room.img,
-                            })
-                          }
-                          className="cursor-pointer group"
-                        >
-                          <rect
-                            x={room.x}
-                            y={room.y}
-                            width={room.w}
-                            height={room.h}
-                            rx={20}
-                            className={`transition-all duration-300 ${
-                              selected
-                                ? "fill-emerald-700/75 stroke-amber-400"
-                                : "fill-emerald-600/20 dark:fill-emerald-400/15 stroke-emerald-800/40 dark:stroke-emerald-300/40 group-hover:fill-emerald-600/35"
-                            }`}
-                            strokeWidth={selected ? 2.5 : 1.5}
-                          />
-                          <text
-                            x={room.x + room.w / 2}
-                            y={room.y + room.h / 2 + 4}
-                            textAnchor="middle"
-                            className={`text-[12px] font-semibold pointer-events-none ${
-                              selected ? "fill-white" : "fill-stone-900 dark:fill-stone-100"
-                            }`}
+              {feature.isPlan ? (
+                <div className="pointer-events-auto absolute bottom-24 left-4 top-20 w-[min(430px,calc(100vw-32px))] md:bottom-8">
+                  <div className="lbf-glass h-full overflow-hidden rounded-[36px] p-4">
+                    <svg viewBox="0 0 320 290" className="h-full w-full">
+                      {HOUSE_ROOMS.map((room) => {
+                        const selected = activeDrawer?.title === room.name;
+                        return (
+                          <g
+                            key={room.id}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Zobacz ${room.name}`}
+                            onClick={() => {
+                              flyToProperty({ bearing: room.bearing, pitch: room.pitch, zoom: 17.2 });
+                              setStudioSource(room.img);
+                              setActiveDrawer({ title: room.name, desc: room.desc, img: room.img });
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter" && event.key !== " ") return;
+                              event.preventDefault();
+                              flyToProperty({ bearing: room.bearing, pitch: room.pitch, zoom: 17.2 });
+                              setStudioSource(room.img);
+                              setActiveDrawer({ title: room.name, desc: room.desc, img: room.img });
+                            }}
+                            className="group cursor-pointer"
                           >
-                            {room.name}
-                          </text>
-                        </g>
-                      );
-                    })}
-                  </svg>
-                  <p className="mt-2 text-center text-[11px] text-stone-500 dark:text-emerald-200/70">
-                    Kliknij dowolne pomieszczenie na planie, aby otworzyć zdjęcia i parametry strefy.
-                  </p>
+                            <rect
+                              x={room.x}
+                              y={room.y}
+                              width={room.w}
+                              height={room.h}
+                              rx={20}
+                              className={`stroke-emerald-800/45 transition-all duration-300 dark:stroke-emerald-300/45 ${
+                                selected
+                                  ? "fill-emerald-700/75 stroke-amber-400"
+                                  : "fill-white/35 group-hover:fill-emerald-400/35 dark:fill-emerald-400/15"
+                              }`}
+                              strokeWidth={selected ? 2.5 : 1.5}
+                            />
+                            <text
+                              x={room.x + room.w / 2}
+                              y={room.y + room.h / 2 + 4}
+                              textAnchor="middle"
+                              className={`pointer-events-none text-[10px] font-semibold ${
+                                selected ? "fill-white" : "fill-stone-900 dark:fill-stone-100"
+                              }`}
+                            >
+                              {room.name}
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              /* WARIANT B: Konstelacja szklanych wysp-węzłów dla funkcji */
-              <div className="relative h-full w-full md:pr-40">
-                {(featureConfig.nodes || []).map((node, i, arr) => {
-                  const angle = (i / arr.length) * Math.PI * 2 - Math.PI / 2;
-                  const rx = arr.length > 3 ? 27 : 20;
-                  const ry = arr.length > 3 ? 24 : 18;
-                  const left = 50 + Math.cos(angle) * rx;
-                  const top = 48 + Math.sin(angle) * ry;
-                  const selected = activeSheet?.title === node.title;
-                  return (
+              ) : (
+                <div className="absolute bottom-28 left-4 top-24 flex w-[min(310px,calc(100vw-92px))] flex-col justify-center gap-4">
+                  {(feature.nodes ?? []).map((node, index) => (
                     <motion.button
                       key={node.title}
                       type="button"
-                      initial={{ scale: 0.7, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      transition={{ delay: i * 0.05, type: "spring", stiffness: 260, damping: 20 }}
-                      onClick={() =>
-                        setActiveSheet({
-                          title: node.title,
-                          desc: node.desc,
-                          tool: node.tool,
-                        })
-                      }
-                      style={{ left: `${left}%`, top: `${top}%`, animationDelay: `-${i * 1.2}s` }}
-                      className={`lbf-orb absolute -translate-x-1/2 -translate-y-1/2 flex h-28 w-32 items-center justify-center p-3 text-center text-xs font-bold leading-snug transition-all ${
-                        selected
-                          ? "!bg-emerald-900 !text-white ring-2 ring-amber-400 scale-110 z-30"
-                          : "text-stone-900 dark:text-emerald-100 hover:scale-105"
+                      initial={{ x: -24, opacity: 0 }}
+                      animate={{ x: index % 2 ? 18 : 0, opacity: 1 }}
+                      transition={{ delay: index * 0.06, type: "spring", stiffness: 280, damping: 22 }}
+                      onClick={() => {
+                        if (node.zoom !== undefined) {
+                          flyToProperty({
+                            zoom: node.zoom,
+                            pitch: node.pitch,
+                            bearing: node.bearing ?? 0,
+                          });
+                        }
+                        setActiveDrawer({ title: node.title, desc: node.desc, tool: node.tool });
+                      }}
+                      className={`lbf-droplet-3d pointer-events-auto w-full px-5 py-4 text-left ${
+                        activeDrawer?.title === node.title ? "ring-2 ring-amber-300" : ""
                       }`}
                     >
-                      {node.title}
+                      <span className="block text-xs font-bold">{node.title}</span>
+                      <span className="mt-1 block text-[10px] leading-relaxed text-stone-700 dark:text-emerald-100/80">
+                        {node.desc}
+                      </span>
                     </motion.button>
-                  );
-                })}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </motion.section>
+          )}
+        </AnimatePresence>
 
-            {/* DOLNA SZUFLADA LIQUID GLASS (zdjęcia pomieszczenia lub działające narzędzie) */}
-            <AnimatePresence>
-              {activeSheet && (
-                <motion.div
-                  initial={{ y: 80, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  exit={{ y: 80, opacity: 0 }}
-                  transition={{ type: "spring", stiffness: 320, damping: 26 }}
-                  className="fixed bottom-4 left-4 right-4 md:right-48 z-40 mx-auto max-w-3xl rounded-[32px] bg-white/90 dark:bg-emerald-950/90 p-5 backdrop-blur-2xl border border-white/90 dark:border-emerald-400/30 shadow-2xl"
+        <AnimatePresence>
+          {activeDrawer && (
+            <motion.aside
+              initial={{ y: 90, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 90, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 320, damping: 28 }}
+              className="lbf-glass pointer-events-auto absolute bottom-4 left-4 right-4 mx-auto max-w-3xl rounded-[32px] p-5 md:right-48"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold">{activeDrawer.title}</h3>
+                  <p className="mt-0.5 text-xs text-stone-600 dark:text-stone-300">{activeDrawer.desc}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveDrawer(null)}
+                  aria-label="Zamknij panel"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-stone-200/70 dark:bg-white/10"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-base font-bold">{activeSheet.title}</h3>
-                      <p className="mt-0.5 text-xs text-stone-600 dark:text-stone-300">
-                        {activeSheet.desc}
-                      </p>
-                    </div>
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {activeDrawer.img && (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <img src={activeDrawer.img} alt={activeDrawer.title} className="h-40 w-full rounded-[20px] object-cover" />
+                  <div className="flex flex-col justify-between rounded-[20px] bg-emerald-950/5 p-3.5 text-xs dark:bg-white/5">
+                    <span>Rzeczywista perspektywa widoku z okna została ustawiona na żywej mapie.</span>
                     <button
                       type="button"
-                      onClick={() => setActiveSheet(null)}
-                      aria-label="Zamknij panel"
-                      className="flex h-8 w-8 items-center justify-center rounded-full bg-stone-200/70 dark:bg-white/10"
+                      onClick={() => {
+                        setActiveFeature("st");
+                        setActiveDrawer({
+                          title: "Studio FLUX.1",
+                          desc: "Edytuj kopię zdjęcia strefy za pomocą otwartego modelu FLUX.1 Kontext.",
+                          tool: "studio",
+                        });
+                      }}
+                      className="lbf-droplet-btn mt-3 py-2 text-center font-bold"
                     >
-                      <X className="h-4 w-4" />
+                      Przejdź do Studia FLUX.1 →
                     </button>
                   </div>
-
-                  {/* Podgląd zdjęcia pomieszczenia */}
-                  {activeSheet.img && (
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <img
-                        src={activeSheet.img}
-                        alt={activeSheet.title}
-                        className="h-40 w-full rounded-[20px] object-cover border border-white/80"
-                      />
-                      <div className="flex flex-col justify-between rounded-[20px] bg-emerald-950/5 dark:bg-white/5 p-3.5 text-xs">
-                        <span>Strefa gotowa do prezentacji 3D i edycji w Studiu AI.</span>
-                        <button
-                          type="button"
-                          onClick={() => setActiveFeature("st")}
-                          className="lbf-droplet-btn mt-3 py-2 text-center font-bold text-emerald-950"
-                        >
-                          Otwórz w Studiu AI →
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Narzędzie: Studio AI (FLUX.1) */}
-                  {activeSheet.tool === "studio" && (
-                    <form onSubmit={runFluxStudio} className="mt-3 space-y-2.5">
-                      <div className="flex flex-wrap gap-2">
-                        <input
-                          type="text"
-                          value={studioPrompt}
-                          onChange={(e) => setStudioPrompt(e.target.value)}
-                          placeholder="Np. Dodaj delfina w basenie albo zmień światło na zachód słońca..."
-                          className="flex-1 min-w-[200px] rounded-full border border-stone-300 dark:border-emerald-600/40 bg-white dark:bg-emerald-950 px-4 py-2 text-xs"
-                        />
-                        {(["2K", "4K", "8K"] as const).map((q) => (
-                          <button
-                            key={q}
-                            type="button"
-                            onClick={() => setStudioQuality(q)}
-                            className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-                              studioQuality === q
-                                ? "bg-emerald-900 text-white"
-                                : "bg-stone-200/70 dark:bg-white/10"
-                            }`}
-                          >
-                            {q}
-                          </button>
-                        ))}
-                        <button
-                          type="submit"
-                          disabled={studioLoading}
-                          className="lbf-droplet-btn !bg-emerald-900 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
-                        >
-                          {studioLoading ? "FLUX.1 pracuje..." : "Generuj kopię"}
-                        </button>
-                      </div>
-                      {studioError && <p className="text-xs font-semibold text-rose-600">{studioError}</p>}
-                      {studioResult && (
-                        <img
-                          src={studioResult}
-                          alt="Wynik FLUX.1"
-                          className="h-44 w-full rounded-[20px] object-cover border border-emerald-400"
-                        />
-                      )}
-                    </form>
-                  )}
-
-                  {/* Narzędzie: Wyszukiwarka Archiwum ("Jodła") */}
-                  {activeSheet.tool === "archive" && (
-                    <div className="mt-3 space-y-2">
-                      <input
-                        type="text"
-                        value={archiveQuery}
-                        onChange={(e) => setArchiveQuery(e.target.value)}
-                        placeholder="Szukaj po treści zdjęcia (np. jodła, taras, salon)..."
-                        className="w-full rounded-full border border-stone-300 dark:border-emerald-600/40 bg-white dark:bg-emerald-950 px-4 py-2 text-xs"
-                      />
-                      <div className="flex items-center justify-between text-xs">
-                        <span>Dopasowano strefy dla hasła: „{archiveQuery}”</span>
-                        <Link href="/properties" className="font-bold text-emerald-800 dark:text-emerald-300 underline">
-                          Pełne archiwum i import folderów →
-                        </Link>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Narzędzie: Marketing */}
-                  {activeSheet.tool === "marketing" && (
-                    <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-stone-100/80 dark:bg-white/5 p-3 text-xs">
-                      <span className="line-clamp-2">
-                        🌿 {activeProperty?.title} ({activeProperty?.area} m²) — {activeProperty?.price}. Bezpośrednio, z mapą i spacerem 3D!
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard?.writeText(
-                            `${activeProperty?.title} — ${activeProperty?.location}, ${activeProperty?.price}`
-                          );
-                          setCopied(true);
-                          setTimeout(() => setCopied(false), 1800);
-                        }}
-                        className="lbf-droplet-btn shrink-0 flex items-center gap-1 px-3 py-1.5 font-bold text-emerald-950"
-                      >
-                        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                        <span>{copied ? "Skopiowano" : "Kopiuj"}</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Narzędzie: Kontakt */}
-                  {activeSheet.tool === "contact" && (
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        setContactSent(true);
-                      }}
-                      className="mt-3 flex flex-wrap gap-2"
-                    >
-                      <input
-                        type="text"
-                        required
-                        placeholder="Telefon lub e-mail"
-                        className="flex-1 rounded-full border border-stone-300 dark:border-emerald-600/40 bg-white dark:bg-emerald-950 px-4 py-2 text-xs"
-                      />
-                      <button
-                        type="submit"
-                        className="lbf-droplet-btn !bg-emerald-900 px-5 py-2 text-xs font-bold text-white"
-                      >
-                        {contactSent ? "Wysłano!" : "Wyślij do właściciela"}
-                      </button>
-                    </form>
-                  )}
-
-                  {/* Narzędzie: Audytor / Pakiety */}
-                  {(activeSheet.tool === "audit" || activeSheet.tool === "plans") && (
-                    <div className="mt-3 flex justify-end">
-                      <Link
-                        href={activeSheet.tool === "plans" ? "/billing" : "/properties"}
-                        className="lbf-droplet-btn !bg-emerald-900 px-5 py-2 text-xs font-bold text-white"
-                      >
-                        {activeSheet.tool === "plans" ? "Przejdź do płatności BLIK / Karta →" : "Otwórz pełny Audytor OCR →"}
-                      </Link>
-                    </div>
-                  )}
-                </motion.div>
+                </div>
               )}
-            </AnimatePresence>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
-      {/* Modal szczegółów z analizatorem nasłonecznienia (opcjonalny) */}
-      <AnimatePresence>
-        {false && activeProperty && (
-          <BiomimeticPropertyDetail property={activeProperty} onClose={() => setSelectedId(null)} />
-        )}
-      </AnimatePresence>
+              {activeDrawer.poi && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {activeDrawer.poi.phone && (
+                    <a
+                      href={activeDrawer.poi.phone}
+                      className="lbf-droplet-btn flex items-center gap-2 px-4 py-2 text-xs font-bold"
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                      Zadzwoń
+                    </a>
+                  )}
+                  {activeDrawer.poi.url && (
+                    <a
+                      href={activeDrawer.poi.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="lbf-droplet-btn flex items-center gap-2 px-4 py-2 text-xs font-bold"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Google Maps
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {activeDrawer.tool === "studio" && (
+                <form onSubmit={runFluxStudio} className="mt-3 space-y-2.5">
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      type="text"
+                      value={studioPrompt}
+                      onChange={(event) => setStudioPrompt(event.target.value)}
+                      placeholder="Np. Zmień światło na ciepły zachód słońca..."
+                      className="min-w-[200px] flex-1 rounded-full border border-stone-300 bg-white px-4 py-2 text-xs dark:border-emerald-600/40 dark:bg-emerald-950"
+                    />
+                    {(["2K", "4K", "8K"] as const).map((quality) => (
+                      <button
+                        key={quality}
+                        type="button"
+                        onClick={() => setStudioQuality(quality)}
+                        className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                          studioQuality === quality
+                            ? "bg-emerald-900 text-white"
+                            : "bg-stone-200/70 dark:bg-white/10"
+                        }`}
+                      >
+                        {quality}
+                      </button>
+                    ))}
+                    <button
+                      type="submit"
+                      disabled={studioLoading || !studioPrompt.trim()}
+                      className="rounded-full bg-emerald-900 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+                    >
+                      {studioLoading ? "FLUX.1 pracuje..." : "Generuj kopię"}
+                    </button>
+                  </div>
+                  {studioError && <p className="text-xs font-semibold text-rose-600">{studioError}</p>}
+                  {studioResult && (
+                    <img src={studioResult} alt="Wynik edycji FLUX.1" className="h-44 w-full rounded-[20px] border border-emerald-400 object-cover" />
+                  )}
+                </form>
+              )}
+
+              {activeDrawer.tool === "archive" && (
+                <div className="mt-3 space-y-2">
+                  <input
+                    type="text"
+                    value={archiveQuery}
+                    onChange={(event) => setArchiveQuery(event.target.value)}
+                    placeholder="Szukaj po treści zdjęcia..."
+                    className="w-full rounded-full border border-stone-300 bg-white px-4 py-2 text-xs dark:border-emerald-600/40 dark:bg-emerald-950"
+                  />
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span>Dopasowano strefy dla hasła: „{archiveQuery}”</span>
+                    <Link href="/properties" className="font-bold text-emerald-800 underline dark:text-emerald-300">
+                      Pełne archiwum →
+                    </Link>
+                  </div>
+                </div>
+              )}
+
+              {activeDrawer.tool === "marketing" && (
+                <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-stone-100/80 p-3 text-xs dark:bg-white/5">
+                  <span className="line-clamp-2">
+                    {activeProperty?.title} — {activeProperty?.location}, {activeProperty?.area} m². MLS: Felix Blau.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={copyMarketing}
+                    className="lbf-droplet-btn flex shrink-0 items-center gap-1 px-3 py-1.5 font-bold"
+                  >
+                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied ? "Skopiowano" : "Kopiuj"}
+                  </button>
+                </div>
+              )}
+
+              {activeDrawer.tool === "contact" && (
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    setContactSent(true);
+                  }}
+                  className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
+                >
+                  <input required type="text" placeholder="Imię" className="rounded-full border border-stone-300 bg-white px-4 py-2 text-xs dark:border-emerald-600/40 dark:bg-emerald-950" />
+                  <input required type="text" placeholder="Telefon lub e-mail" className="rounded-full border border-stone-300 bg-white px-4 py-2 text-xs dark:border-emerald-600/40 dark:bg-emerald-950" />
+                  <button type="submit" className="rounded-full bg-emerald-900 px-5 py-2 text-xs font-bold text-white">
+                    {contactSent ? "Wysłano!" : "Wyślij"}
+                  </button>
+                </form>
+              )}
+
+              {(activeDrawer.tool === "audit" || activeDrawer.tool === "plans") && (
+                <div className="mt-3 flex justify-end">
+                  <Link
+                    href={activeDrawer.tool === "plans" ? "/billing" : "/properties"}
+                    className="lbf-droplet-btn px-5 py-2 text-xs font-bold"
+                  >
+                    {activeDrawer.tool === "plans" ? "Pakiety i płatność →" : "Otwórz pełny Audytor OCR →"}
+                  </Link>
+                </div>
+              )}
+            </motion.aside>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

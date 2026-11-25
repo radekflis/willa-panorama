@@ -4,12 +4,12 @@ export const maxDuration = 60;
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { imageUrl, prompt, quality = "4K" } = body as {
+    const body = (await req.json()) as {
       imageUrl?: string;
       prompt?: string;
       quality?: string;
     };
+    const { imageUrl, prompt, quality = "4K" } = body;
 
     if (!prompt?.trim()) {
       return NextResponse.json({ error: "Wpisz polecenie zmiany." }, { status: 400 });
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Model FLUX.1 nie zwrócił obrazu." }, { status: 502 });
     }
 
-    return NextResponse.json({ url: outUrl, quality, engine: "FLUX.1 Kontext (Open Weights)" });
+    return NextResponse.json({ url: outUrl, quality, engine: "FLUX.1 Kontext" });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Błąd serwera Studia AI." },
