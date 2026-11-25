@@ -39,6 +39,8 @@ interface BiomimeticMapProps {
   onRouteError?: (error: string | null) => void;
   streetViewTarget?: MapPoint | null;
   onCloseStreetView?: () => void;
+  pickLocationMode?: boolean;
+  onPickLocation?: (coords: MapPoint) => void;
 }
 
 const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -58,10 +60,12 @@ export function BiomimeticPropertyMap({
   onRouteError,
   streetViewTarget,
   onCloseStreetView,
+  pickLocationMode = false,
+  onPickLocation,
 }: BiomimeticMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const callbacks = useRef({ onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onCloseStreetView });
-  callbacks.current = { onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onCloseStreetView };
+  const callbacks = useRef({ onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onCloseStreetView, pickLocationMode, onPickLocation });
+  callbacks.current = { onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onCloseStreetView, pickLocationMode, onPickLocation };
   const markerButtons = useRef(new Map<string, HTMLButtonElement>());
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [mapType, setMapType] = useState<"hybrid" | "roadmap" | "terrain">("hybrid");
@@ -111,6 +115,11 @@ export function BiomimeticPropertyMap({
           if (!visible) callbacks.current.onCloseStreetView?.();
         });
         clickListener = instance.addListener("click", async (event: google.maps.MapMouseEvent | google.maps.IconMouseEvent) => {
+          if (callbacks.current.pickLocationMode) {
+            if ("placeId" in event && event.placeId) event.stop();
+            if (event.latLng) callbacks.current.onPickLocation?.(event.latLng.toJSON());
+            return;
+          }
           if (!("placeId" in event) || !event.placeId) return;
           event.stop();
           const request = ++placeRequest;
@@ -156,8 +165,8 @@ export function BiomimeticPropertyMap({
 
   useEffect(() => {
     if (!map || !cameraTarget) return;
+    map.panTo({ lat: cameraTarget.lat, lng: cameraTarget.lng });
     map.moveCamera({
-      center: { lat: cameraTarget.lat, lng: cameraTarget.lng },
       zoom: cameraTarget.zoom,
       tilt: cameraTarget.pitch ?? 45,
       heading: cameraTarget.bearing ?? 0,
@@ -206,8 +215,8 @@ export function BiomimeticPropertyMap({
   useEffect(() => {
     markerButtons.current.forEach((button, id) => {
       const highlighted = id === hoveredId || id === selectedId;
-      button.className = `lbf-glass-clear absolute -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-bold transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
-        highlighted ? "is-active scale-110" : ""
+      button.className = `crystal-chip absolute -translate-x-1/2 -translate-y-full whitespace-nowrap px-3.5 py-1.5 text-xs font-bold transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
+        highlighted ? "scale-110" : ""
       }`;
     });
   }, [map, properties, hoveredId, selectedId]);
@@ -291,13 +300,13 @@ export function BiomimeticPropertyMap({
 
   if (!apiKey) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-[#F3EFE6] p-6 text-center">
-        <div className="max-w-md rounded-[28px] border border-white/85 bg-white/80 p-6 shadow-lg backdrop-blur-xl">
-          <p className="text-sm font-semibold text-stone-800">Google Maps wymaga klucza API</p>
-          <p className="mt-2 text-xs text-stone-500">Dodaj NEXT_PUBLIC_GOOGLE_MAPS_API_KEY do .env.local i konfiguracji wdrożenia, a następnie uruchom aplikację ponownie.</p>
+      <div className="flex h-full w-full items-center justify-center bg-neutral-900 p-6 text-center">
+        <div className="crystal-dialog max-w-md p-6">
+          <p className="text-sm font-semibold">Google Maps wymaga klucza API</p>
+          <p className="mt-2 text-xs">Dodaj NEXT_PUBLIC_GOOGLE_MAPS_API_KEY do .env.local i konfiguracji wdrożenia, a następnie uruchom aplikację ponownie.</p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             {properties.map((property) => (
-              <button key={property.id} type="button" onClick={() => onSelect(property.id)} className="rounded-full bg-emerald-800 px-3 py-1.5 text-xs font-semibold text-white">{property.priceShort}</button>
+              <button key={property.id} type="button" onClick={() => onSelect(property.id)} className="crystal-chip px-3 py-1.5 text-xs font-semibold">{property.priceShort}</button>
             ))}
           </div>
         </div>
@@ -309,14 +318,14 @@ export function BiomimeticPropertyMap({
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" aria-label="Interaktywna mapa Google" />
       {!streetVisible && (
-        <div className="lbf-glass-clear absolute bottom-12 left-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap gap-1 rounded-full p-1">
-          {([["hybrid", "Satelita HD"], ["roadmap", "Mapa"], ["terrain", "Teren / Szlaki"]] as const).map(([type, label]) => (
-            <button key={type} type="button" aria-pressed={mapType === type} onClick={() => setMapType(type)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${mapType === type ? "border-emerald-300/60 bg-emerald-500/35" : "border-transparent hover:bg-white/15"}`}>{label}</button>
+        <div className="absolute left-4 top-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap gap-2">
+          {([["hybrid", "Satelita HD"], ["roadmap", "Mapa"], ["terrain", "Teren"]] as const).map(([type, label]) => (
+            <button key={type} type="button" aria-pressed={mapType === type} onClick={() => setMapType(type)} className={`crystal-chip px-3 py-1.5 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${mapType === type ? "ring-2 ring-white" : ""}`}>{label}</button>
           ))}
-          <button type="button" aria-pressed={cycling} onClick={() => setCycling((value) => !value)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${cycling ? "border-emerald-300/60 bg-emerald-500/35" : "border-transparent hover:bg-white/15"}`}>Rower</button>
+          <button type="button" aria-pressed={cycling} onClick={() => setCycling((value) => !value)} className={`crystal-chip px-3 py-1.5 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${cycling ? "ring-2 ring-white" : ""}`}>Rower</button>
         </div>
       )}
-      {streetVisible && <button type="button" onClick={() => map?.getStreetView().setVisible(false)} className="lbf-glass-clear absolute bottom-12 left-4 z-10 rounded-full px-3 py-1.5 text-[11px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">← Powrót do mapy</button>}
+      {streetVisible && <button type="button" onClick={() => map?.getStreetView().setVisible(false)} className="crystal-chip absolute left-4 top-4 z-10 px-3 py-1.5 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">← Powrót do mapy</button>}
       {(error || routeError || routeWarnings.length > 0) && (
         <div role="status" className="absolute left-4 top-20 z-10 max-w-sm rounded-2xl bg-white/95 p-3 text-xs text-stone-900 shadow-lg">
           {error && <p>{error}</p>}

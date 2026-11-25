@@ -15,6 +15,8 @@ export function BiomimeticShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { edition, setEdition } = useEdition();
 
+  if (pathname === "/dashboard") return <>{children}</>;
+
   const navItems =
     edition === "buyer"
       ? [

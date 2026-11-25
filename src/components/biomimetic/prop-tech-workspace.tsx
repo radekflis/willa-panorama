@@ -1,38 +1,17 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { AnimatePresence, motion } from "framer-motion";
-import {
-  ArrowLeft,
-  Building2,
-  Check,
-  Compass,
-  Copy,
-  FileCheck2,
-  FolderSearch,
-  Home,
-  Mail,
-  Megaphone,
-  Moon,
-  Paintbrush,
-  Phone,
-  Sparkles,
-  Sun,
-  X,
-} from "lucide-react";
-import { BiomimeticPropertyCard } from "./biomimetic-property-card";
+import React, { useMemo, useRef, useState } from "react";
+import { importLibrary } from "@googlemaps/js-api-loader";
 import {
   BiomimeticPropertyMap,
-  MapCameraTarget,
-  MapPoint,
-  PropertyMarkerData,
-  RouteDestination,
-  RouteInfo,
-  RouteMode,
+  type MapCameraTarget,
+  type MapPoint,
+  type RouteDestination,
+  type RouteInfo,
+  type RouteMode,
 } from "./biomimetic-property-map";
-import { PropertyDetailData } from "./biomimetic-property-detail";
-import { LiquidPriceSlider } from "./liquid-price-slider";
+import type { PropertyDetailData } from "./biomimetic-property-detail";
+import { predictSuffix } from "./crystal-prediction";
 
 export interface WorkspaceProperty extends PropertyDetailData {
   priceNumeric: number;
@@ -42,785 +21,239 @@ export interface WorkspaceProperty extends PropertyDetailData {
   lng: number;
 }
 
-type RoleId = "buyer" | "owner" | "agency";
-type FeatureId =
-  | "dom"
-  | "td"
-  | "ok"
-  | "zap"
-  | "ar"
-  | "st"
-  | "op"
-  | "mk"
-  | "au"
-  | "sk"
-  | "pl"
-  | "ob";
-type ToolId = "studio" | "archive" | "marketing" | "audit" | "contact" | "plans";
+const TYPES = ["dom", "mieszkanie", "działkę", "apartament"];
+const LOCATIONS = ["w województwie pomorskim", "w dolnośląskim", "w mazowieckim", "nad jeziorem", "w górach"];
 
-interface FeatureNode {
+type Intent = "sell" | "buy" | "area" | "unknown";
+
+function localIntent(text: string): Intent {
+  const value = text.toLocaleLowerCase("pl");
+  if (/sprzeda|sprzedaj|sprzedam/.test(value)) return "sell";
+  if (/kup|szukam/.test(value)) return "buy";
+  if (/okolic|otoczeni/.test(value)) return "area";
+  return "unknown";
+}
+
+function FileDrop({ title, accept, file, onFile }: {
   title: string;
-  desc: string;
-  tool?: ToolId;
-  bearing?: number;
-  pitch?: number;
-  zoom?: number;
+  accept: string;
+  file: File | null;
+  onFile: (file: File) => void;
+}) {
+  return (
+    <label
+      className="block cursor-pointer rounded-xl border border-dashed border-white/70 bg-white/10 p-3 text-sm"
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        event.preventDefault();
+        const dropped = event.dataTransfer.files[0];
+        if (dropped) onFile(dropped);
+      }}
+    >
+      <span className="font-semibold">{title}</span>
+      <span className="mt-1 block text-xs">{file ? file.name : "Przeciągnij plik lub wybierz z urządzenia"}</span>
+      <input className="sr-only" type="file" accept={accept} onChange={(event) => {
+        const selected = event.target.files?.[0];
+        if (selected) onFile(selected);
+      }} />
+    </label>
+  );
 }
 
-interface FeatureConfig {
-  id: FeatureId;
-  label: string;
-  icon: React.ElementType;
-  isPlan?: boolean;
-  nodes?: FeatureNode[];
-}
-
-interface DrawerState {
-  title: string;
-  desc: string;
-  img?: string;
-  tool?: ToolId;
-  place?: google.maps.places.Place;
-}
-
-const ROLE_LABELS: Record<RoleId, string> = {
-  buyer: "Kupujący",
-  owner: "Właściciel",
-  agency: "Agencja",
-};
-
-const ROLE_FEATURES: Record<RoleId, FeatureId[]> = {
-  buyer: ["dom", "td", "ok", "zap"],
-  owner: ["ar", "st", "op", "mk", "au", "sk", "pl"],
-  agency: ["ob", "ar", "st", "op", "mk", "au", "sk", "pl"],
-};
-
-const FEATURES: Record<FeatureId, FeatureConfig> = {
-  dom: { id: "dom", label: "Nieruchomość", icon: Home, isPlan: true },
-  td: {
-    id: "td",
-    label: "Spacer 3D",
-    icon: Compass,
-    nodes: [
-      { title: "Model 3D z filmu", desc: "Spacer 3D (.ksplat) z jednego filmu smartfonem.", pitch: 70, zoom: 17 },
-      { title: "Satelita HD", desc: "Widok z góry na działkę i nasłonecznienie.", pitch: 0, zoom: 17.5 },
-      { title: "Lot drona 360°", desc: "Przelot wokół bryły domu i otoczenia.", pitch: 65, bearing: 120, zoom: 16 },
-    ],
-  },
-  ok: {
-    id: "ok",
-    label: "Okolica",
-    icon: Sparkles,
-    nodes: [
-      { title: "Zdrowie", desc: "Przychodnia i apteka — kliknij piny na żywej mapie.", zoom: 13.6, pitch: 38 },
-      { title: "Aktywny wypoczynek", desc: "Rowerowa pętla o długości 18 km.", zoom: 13.2, pitch: 42, bearing: 35 },
-      { title: "Woda", desc: "Przystań żeglarska i windsurfing.", zoom: 13.5, pitch: 45, bearing: -40 },
-    ],
-  },
-  zap: {
-    id: "zap",
-    label: "Zapytaj właściciela",
-    icon: Mail,
-    nodes: [
-      { title: "Bezpośredni kontakt", desc: "0% prowizji przy zakupie bezpośrednim.", tool: "contact" },
-      { title: "Umów prezentację", desc: "Wizyta na miejscu lub wideospacer.", tool: "contact" },
-    ],
-  },
-  ar: {
-    id: "ar",
-    label: "Archiwum",
-    icon: FolderSearch,
-    nodes: [
-      { title: "Szukaj „Jodła”", desc: "Wyszukiwarka po treści zdjęć i wideo AI.", tool: "archive" },
-      { title: "Film pod 3D", desc: "Wgraj film ze smartfona pod spacer 3D.", tool: "archive" },
-    ],
-  },
-  st: {
-    id: "st",
-    label: "Studio AI",
-    icon: Paintbrush,
-    nodes: [
-      { title: "FLUX.1 Kontext", desc: "Otwarty model FLUX.1 na Fal.ai — edycja fotografii tekstem.", tool: "studio" },
-      { title: "Kopie 2K / 4K / 8K", desc: "Oryginał pozostaje nietknięty, wynik powstaje jako kopia.", tool: "studio" },
-    ],
-  },
-  op: {
-    id: "op",
-    label: "Opis i Potencjał",
-    icon: Sparkles,
-    nodes: [
-      { title: "8 parametrów", desc: "Wnioski wyciągnięte z analizy zdjęć i mapy." },
-      { title: "Potencjał lokalizacji", desc: "Analiza wartości, infrastruktury i przyrody." },
-    ],
-  },
-  mk: {
-    id: "mk",
-    label: "Marketing & MLS",
-    icon: Megaphone,
-    nodes: [
-      { title: "Sieć MLS (Felix Blau)", desc: "Multiplikacja dotarcia przez sieć agencji MLS.", tool: "marketing" },
-      { title: "SEO / Google Ads / FB", desc: "Gotowe pakiety reklamowe i posty.", tool: "marketing" },
-    ],
-  },
-  au: {
-    id: "au",
-    label: "Audytor Umów",
-    icon: FileCheck2,
-    nodes: [
-      { title: "Audyt PL / UE", desc: "Kontrola zadatku, terminów i ryzyk.", tool: "audit" },
-      { title: "Skan OCR", desc: "Odczyt skanów i PDF-ów.", tool: "audit" },
-    ],
-  },
-  sk: {
-    id: "sk",
-    label: "Skrzynka",
-    icon: Mail,
-    nodes: [
-      { title: "Zapytania", desc: "Wiadomości od kupujących i agentów MLS." },
-      { title: "Prezentacje", desc: "Harmonogram spotkań." },
-    ],
-  },
-  pl: {
-    id: "pl",
-    label: "Pakiety",
-    icon: Sparkles,
-    nodes: [
-      { title: "Właściciel Direct", desc: "49 zł / projekt — Living Map-OS, FLUX.1, 3D i MLS.", tool: "plans" },
-      { title: "Agencja White-Label", desc: "199 zł / mies. — marka i portfel obiektów.", tool: "plans" },
-    ],
-  },
-  ob: {
-    id: "ob",
-    label: "Moje obiekty",
-    icon: Building2,
-    nodes: [
-      { title: "Portfel Agencji", desc: "Wszystkie nieruchomości na jednej żywej mapie." },
-      { title: "Marka White-Label", desc: "Własne logo, kolory i domena." },
-    ],
-  },
-};
-
-const HOUSE_ROOMS = [
-  { id: "salon", name: "Salon · Pd-Zach", x: 18, y: 20, w: 152, h: 112, bearing: 215, pitch: 72, img: "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=900&q=80", desc: "Widok przez południowo-zachodnie przeszklenia — kamera obraca się w stronę słońca." },
-  { id: "kuchnia", name: "Kuchnia · Wsch", x: 178, y: 20, w: 124, h: 72, bearing: 90, pitch: 68, img: "https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=900&q=80", desc: "Poranne światło wschodnie i wyspa z kamienia." },
-  { id: "sypialnia", name: "Sypialnia · Pn", x: 178, y: 100, w: 124, h: 74, bearing: 0, pitch: 66, img: "https://images.unsplash.com/photo-1600585154526-990dced4db0d?auto=format&fit=crop&w=900&q=80", desc: "Cisza od północy i widok na korony drzew." },
-  { id: "lazienka", name: "Łazienka", x: 18, y: 140, w: 72, h: 66, bearing: 270, pitch: 62, img: "https://images.unsplash.com/photo-1600566752355-35792bedcfea?auto=format&fit=crop&w=900&q=80", desc: "Strefa kąpielowa z naturalnym światłem." },
-  { id: "gabinet", name: "Gabinet", x: 98, y: 140, w: 72, h: 66, bearing: 315, pitch: 64, img: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80", desc: "Cichy gabinet ze światłowodem." },
-  { id: "taras", name: "Taras · Południe", x: 18, y: 214, w: 152, h: 58, bearing: 180, pitch: 75, img: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=900&q=80", desc: "Perspektywa południowa z tarasu i basenu (180°)." },
-  { id: "ogrod", name: "Ogród · Zachód", x: 178, y: 182, w: 124, h: 90, bearing: 260, pitch: 70, img: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80", desc: "Dojrzały ogród ze starodrzewem, jodłami i szklarnią." },
-];
-
-export function PropTechWorkspace({ properties }: { properties: WorkspaceProperty[] }) {
-  const [role, setRole] = useState<RoleId>("buyer");
-  const [isDark, setIsDark] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [showFilter, setShowFilter] = useState(false);
-  const [maxPrice, setMaxPrice] = useState(5_000_000);
-  const [locationQuery, setLocationQuery] = useState("");
-  const [savedIds, setSavedIds] = useState<string[]>([]);
-  const [activeFeature, setActiveFeature] = useState<FeatureId | null>(null);
-  const [activeDrawer, setActiveDrawer] = useState<DrawerState | null>(null);
+export function PropTechWorkspace({ properties: _properties }: { properties: WorkspaceProperty[] }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const [caretAtEnd, setCaretAtEnd] = useState(true);
+  const [sellerOpen, setSellerOpen] = useState(false);
+  const [location, setLocation] = useState<MapPoint | null>(null);
+  const [address, setAddress] = useState("");
+  const [video, setVideo] = useState<File | null>(null);
+  const [plan, setPlan] = useState<File | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [cameraTarget, setCameraTarget] = useState<MapCameraTarget | null>(null);
-  const [routeDestination, setRouteDestination] = useState<RouteDestination | null>(null);
+  const [place, setPlace] = useState<google.maps.places.Place | null>(null);
+  const [route, setRoute] = useState<RouteDestination | null>(null);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
-  const [streetViewTarget, setStreetViewTarget] = useState<MapPoint | null>(null);
-  const [studioSource, setStudioSource] = useState<string | null>(null);
-  const [studioPrompt, setStudioPrompt] = useState("");
-  const [studioQuality, setStudioQuality] = useState<"2K" | "4K" | "8K">("4K");
-  const [studioLoading, setStudioLoading] = useState(false);
-  const [studioResult, setStudioResult] = useState<string | null>(null);
-  const [studioError, setStudioError] = useState<string | null>(null);
-  const [archiveQuery, setArchiveQuery] = useState("jodła");
-  const [copied, setCopied] = useState(false);
-  const [contactSent, setContactSent] = useState(false);
+  const [streetView, setStreetView] = useState<MapPoint | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    try {
-      const dark = window.localStorage.getItem("lbf_dark_mode") === "1";
-      setIsDark(dark);
-      document.documentElement.classList.toggle("dark", dark);
-      const saved = window.localStorage.getItem("lbf_saved_ids");
-      if (saved) setSavedIds(JSON.parse(saved) as string[]);
-    } catch {
-      setSavedIds([]);
-    }
-  }, []);
+  const ghost = caretAtEnd ? predictSuffix(query) : "";
+  const typeMatch = query.match(/^(Sprzedaję|Kupuję)\s+(dom|mieszkanie|działkę|apartament)(?:\s|$)/i);
+  const suggestions = typeMatch
+    ? LOCATIONS
+    : /^(Sprzedaję|Kupuję)\s/i.test(query)
+      ? TYPES
+      : ["Sprzedaję", "Kupuję", "Sprawdź okolicę"];
 
-  const filteredProperties = useMemo(() => {
-    const query = locationQuery.trim().toLocaleLowerCase("pl");
-    return properties.filter(
-      (property) =>
-        property.priceNumeric <= maxPrice &&
-        (!query ||
-          property.location.toLocaleLowerCase("pl").includes(query) ||
-          property.title.toLocaleLowerCase("pl").includes(query))
-    );
-  }, [locationQuery, maxPrice, properties]);
-
-  const activeProperty = useMemo(
-    () => properties.find((property) => property.id === selectedId) ?? filteredProperties[0] ?? properties[0],
-    [filteredProperties, properties, selectedId]
-  );
-
-  const markers: PropertyMarkerData[] = useMemo(
-    () =>
-      filteredProperties.map((property) => ({
-        id: property.id,
-        priceShort: property.priceShort,
-        lat: property.lat,
-        lng: property.lng,
-        ecoScore: property.ecoScore ?? 94,
-      })),
-    [filteredProperties]
-  );
-
-  const flyToProperty = (overrides: Partial<MapCameraTarget>) => {
-    if (!activeProperty) return;
-    setCameraTarget({
-      lng: activeProperty.lng,
-      lat: activeProperty.lat,
-      zoom: 17.2,
-      pitch: 45,
-      bearing: 0,
-      ...overrides,
-      ts: Date.now(),
+  function setText(value: string) {
+    setQuery(value);
+    setCaretAtEnd(true);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(value.length, value.length);
+      setScrollLeft(inputRef.current?.scrollLeft ?? 0);
     });
-  };
+  }
 
-  const selectFeature = (id: FeatureId) => {
-    setActiveFeature(id);
-    setActiveDrawer(null);
-    setStudioResult(null);
-    setStudioError(null);
-    if (id === "ok") {
-      flyToProperty({ zoom: 13.6, pitch: 38, bearing: 0 });
-    }
-  };
+  function chooseSuggestion(value: string) {
+    if (typeMatch) setText(`${typeMatch[1]} ${typeMatch[2]} ${value} `);
+    else if (/^(Sprzedaję|Kupuję)\s/i.test(query)) setText(`${query.match(/^(Sprzedaję|Kupuję)/i)?.[0]} ${value} `);
+    else setText(`${value} `);
+  }
 
-  const toggleDark = () => {
-    setIsDark((current) => {
-      const next = !current;
-      document.documentElement.classList.toggle("dark", next);
-      window.localStorage.setItem("lbf_dark_mode", next ? "1" : "0");
-      return next;
-    });
-  };
-
-  const toggleSave = (id: string) => {
-    setSavedIds((current) => {
-      const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
-      window.localStorage.setItem("lbf_saved_ids", JSON.stringify(next));
-      return next;
-    });
-  };
-
-  const runFluxStudio = async (event: React.FormEvent) => {
+  async function submitQuery(event: React.FormEvent) {
     event.preventDefault();
-    const imageUrl = studioSource ?? activeProperty?.imageUrl;
-    if (!studioPrompt.trim() || !imageUrl) return;
-    setStudioLoading(true);
-    setStudioError(null);
-    try {
-      const response = await fetch("/api/studio/edit-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl, prompt: studioPrompt.trim(), quality: studioQuality }),
-      });
-      const data = (await response.json()) as { url?: string; error?: string };
-      if (!response.ok || !data.url) {
-        setStudioError(data.error ?? "Nie udało się wygenerować obrazu.");
-        return;
+    if (!query.trim() || busy) return;
+    setMessage(null);
+    let intent = localIntent(query);
+    if (intent === "unknown") {
+      setBusy(true);
+      try {
+        const response = await fetch("/api/ai/intent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: query }),
+          signal: AbortSignal.timeout(1500),
+        });
+        if (!response.ok) throw new Error(`Intent API: ${response.status}`);
+        const result: { intent?: Intent } = await response.json();
+        if (result.intent) intent = result.intent;
+      } catch (error) {
+        console.warn("Interpretacja AI niedostępna, użyto lokalnej:", error);
+      } finally {
+        setBusy(false);
       }
-      setStudioResult(data.url);
-    } catch (error) {
-      setStudioError(error instanceof Error ? error.message : "Błąd połączenia ze Studiem AI.");
-    } finally {
-      setStudioLoading(false);
     }
-  };
+    if (intent === "sell") {
+      setPlace(null);
+      setSellerOpen(true);
+    } else if (intent === "buy" || intent === "area") {
+      setSellerOpen(false);
+      setMessage("Wybierz miejsce na mapie, aby zobaczyć informacje Google, trasę lub Street View.");
+    } else {
+      setMessage("Nie rozpoznano intencji. Napisz, czy chcesz sprzedać, kupić lub sprawdzić okolicę.");
+    }
+  }
 
-  const copyMarketing = async () => {
-    if (!activeProperty) return;
-    const text = `${activeProperty.title} — ${activeProperty.location}, ${activeProperty.area} m², ${activeProperty.price}. Living Map-OS + spacer 3D. MLS: Felix Blau.`;
+  async function findAddress(event: React.FormEvent) {
+    event.preventDefault();
+    if (!address.trim()) return;
     try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setStudioError("Nie udało się skopiować treści. Zaznacz tekst ręcznie.");
+      const { Geocoder } = await importLibrary("geocoding");
+      const result = await new Geocoder().geocode({ address, region: "PL" });
+      const point = result.results[0]?.geometry.location.toJSON();
+      if (!point) throw new Error("Nie znaleziono adresu.");
+      setLocation(point);
+      setCameraTarget({ ...point, zoom: 17, pitch: 60, ts: Date.now() });
+      setMessage(null);
+    } catch (error) {
+      console.error("Nie udało się znaleźć adresu:", error);
+      setMessage("Nie udało się znaleźć adresu. Sprawdź adres i dostęp do Google Geocoding API.");
     }
-  };
+  }
 
-  const feature = activeFeature ? FEATURES[activeFeature] : null;
+  function selectFile(file: File, kind: "video" | "plan") {
+    const valid = kind === "video"
+      ? file.type.startsWith("video/")
+      : ["application/pdf", "image/jpeg", "image/png"].includes(file.type);
+    if (!valid || !file.size) {
+      setMessage(kind === "video" ? "Wybierz poprawny plik wideo." : "Wybierz poprawny plik PDF, JPG lub PNG.");
+      return;
+    }
+    setMessage(null);
+    if (kind === "video") setVideo(file);
+    else setPlan(file);
+  }
+
+  const markers = useMemo(() => location ? [{ id: "wybrana", priceShort: "◇", ...location, ecoScore: 0 }] : [], [location]);
+  const placeLocation = place?.location?.toJSON();
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-[#F3EFE6] text-stone-900 transition-colors duration-500 dark:bg-[#06110E] dark:text-stone-100">
-      <div className="absolute inset-0 z-0">
-        <BiomimeticPropertyMap
-          properties={markers}
-          hoveredId={hoveredId}
-          selectedId={selectedId}
-          onHover={setHoveredId}
-          onSelect={(id) => {
-            setSelectedId(id);
-            selectFeature(role === "buyer" ? "dom" : "op");
-          }}
-          cameraTarget={cameraTarget}
-          onSelectGooglePlace={(place) => {
-            setRouteDestination(null);
-            setRouteInfo(null);
-            setActiveDrawer({ title: place.displayName ?? "Miejsce Google", desc: "", place });
-          }}
-          routeOrigin={activeProperty ? { lat: activeProperty.lat, lng: activeProperty.lng } : undefined}
-          routeDestination={routeDestination}
-          onRouteInfo={setRouteInfo}
-          onRouteError={setRouteError}
-          streetViewTarget={streetViewTarget}
-          onCloseStreetView={() => setStreetViewTarget(null)}
-        />
-      </div>
+    <main className="relative h-[100dvh] w-full overflow-hidden bg-neutral-900">
+      <BiomimeticPropertyMap
+        properties={markers}
+        hoveredId={null}
+        selectedId={null}
+        onHover={() => {}}
+        onSelect={() => {
+          if (!location) return;
+          setCameraTarget({ ...location, zoom: 17, pitch: 60, ts: Date.now() });
+          setMessage("Spacer 3D i odczyt wymiarów nie są jeszcze dostępne.");
+        }}
+        cameraTarget={cameraTarget}
+        pickLocationMode={sellerOpen}
+        onPickLocation={(point) => { setLocation(point); setMessage(null); }}
+        onSelectGooglePlace={(selected) => { setPlace(selected); setRoute(null); setRouteInfo(null); }}
+        routeOrigin={location ?? undefined}
+        routeDestination={route}
+        onRouteInfo={setRouteInfo}
+        onRouteError={setRouteError}
+        streetViewTarget={streetView}
+        onCloseStreetView={() => setStreetView(null)}
+      />
 
-      <div className="pointer-events-none absolute inset-0 z-20">
-        <header className="pointer-events-auto absolute left-1/2 top-4 z-40 flex max-w-[96vw] -translate-x-1/2 flex-col items-center gap-2">
-          <div className="lbf-glass-clear flex items-center gap-0.5 rounded-full p-1">
-            {(Object.keys(ROLE_LABELS) as RoleId[]).map((roleId) => (
-              <button
-                key={roleId}
-                type="button"
-                aria-pressed={role === roleId}
-                onClick={() => {
-                  setRole(roleId);
-                  setActiveFeature(null);
-                  setActiveDrawer(null);
-                }}
-                className={`rounded-full border px-2 py-1 text-[11px] font-medium text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:px-3 ${
-                  role === roleId
-                    ? "border-emerald-300/60 bg-emerald-500/35"
-                    : "border-transparent hover:bg-white/15"
-                }`}
-              >
-                {ROLE_LABELS[roleId]}
-              </button>
-            ))}
-            <span className="mx-1 h-4 w-px bg-white/35" />
-            <button
-              type="button"
-              onClick={() => setShowFilter((visible) => !visible)}
-              aria-expanded={showFilter}
-              className="rounded-full px-3 py-1 text-[11px] font-medium text-white hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-            >
-              Filtr
-            </button>
-            <button
-              type="button"
-              onClick={toggleDark}
-              aria-label="Przełącz Dzień / Noc"
-              className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-white hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-            >
-              {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-              <span className="hidden sm:inline">{isDark ? "Dzień" : "Noc"}</span>
-            </button>
+      {sellerOpen && (
+        <section aria-label="Przygotowanie spaceru 3D" className="crystal-dialog absolute right-4 top-20 z-20 max-h-[55dvh] w-[min(24rem,calc(100%-2rem))] overflow-y-auto p-5 text-sm">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="font-semibold">Przygotuj spacer 3D</h2>
+            <button type="button" onClick={() => setSellerOpen(false)} aria-label="Zamknij" className="crystal-chip px-2 py-1">×</button>
           </div>
+          <div className="space-y-3">
+            <div>
+              <p className="font-semibold">1. Wskaż na mapie lub wpisz adres</p>
+              <p className="my-1 text-xs">{location ? `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}` : "Kliknij dowolny punkt mapy."}</p>
+              <form onSubmit={findAddress} className="flex gap-2">
+                <input aria-label="Adres nieruchomości" value={address} onChange={(event) => setAddress(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-white/60 bg-black/20 px-3 py-2 text-white placeholder:text-white/70" placeholder="Adres" />
+                <button className="crystal-chip px-3" type="submit">Znajdź</button>
+              </form>
+            </div>
+            <FileDrop title="2. Wgraj obowiązkowe wideo" accept="video/*" file={video} onFile={(file) => selectFile(file, "video")} />
+            <FileDrop title="3. Wgraj rzut lokalu" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" file={plan} onFile={(file) => selectFile(file, "plan")} />
+            <p className="text-xs">Pliki pozostają na tym urządzeniu i nie są przesyłane. Silnik 3D Nerfstudio oraz analiza rzutów zostaną podłączone w kolejnym etapie.</p>
+            <button type="button" disabled={!location || !video || !plan} onClick={() => setMessage("Nie można utworzyć spaceru: brak skonfigurowanej usługi Nerfstudio i analizy rzutu. Pliki nie zostały przesłane.")} className="crystal-chip w-full px-3 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-50">Utwórz zwymiarowany spacer 3D</button>
+          </div>
+        </section>
+      )}
 
-          <AnimatePresence>
-            {showFilter && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                className="w-[min(360px,92vw)] rounded-[28px] border border-white/85 bg-white/88 px-5 py-3 shadow-xl backdrop-blur-2xl dark:border-emerald-400/25 dark:bg-emerald-950/88"
-              >
-                <LiquidPriceSlider value={maxPrice} onChange={setMaxPrice} />
-                <input
-                  type="text"
-                  value={locationQuery}
-                  onChange={(event) => setLocationQuery(event.target.value)}
-                  placeholder="Lokalizacja lub nazwa nieruchomości"
-                  className="mt-2 w-full rounded-full border border-stone-300/70 bg-white/80 px-3.5 py-1.5 text-xs focus:outline-none dark:border-emerald-600/40 dark:bg-emerald-950"
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </header>
+      {place && !sellerOpen && (
+        <section aria-label="Miejsce Google" className="crystal-dialog absolute right-4 top-20 z-20 w-[min(22rem,calc(100%-2rem))] p-5 text-sm">
+          <div className="flex justify-between gap-3"><h2 className="font-semibold">{place.displayName ?? "Miejsce Google"}</h2><button type="button" onClick={() => setPlace(null)} aria-label="Zamknij" className="crystal-chip px-2">×</button></div>
+          {place.rating != null && <p className="mt-2">Ocena: {place.rating} / 5</p>}
+          {place.nationalPhoneNumber && <p className="mt-2">{place.nationalPhoneNumber}</p>}
+          {place.websiteURI && <a className="mt-2 block underline" href={place.websiteURI} target="_blank" rel="noreferrer">Strona miejsca</a>}
+          {placeLocation && <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" className="crystal-chip px-2 py-1" onClick={() => setStreetView(placeLocation)}>Street View</button>
+            {(["DRIVING", "WALKING", "BICYCLING"] as RouteMode[]).map((mode) => <button key={mode} type="button" disabled={!location} className="crystal-chip px-2 py-1 disabled:opacity-50" onClick={() => setRoute({ ...placeLocation, mode })}>{mode === "DRIVING" ? "Auto" : mode === "WALKING" ? "Pieszo" : "Rower"}</button>)}
+          </div>}
+          {!location && <p className="mt-2 text-xs">Aby wyznaczyć trasę, najpierw wskaż punkt nieruchomości.</p>}
+          {route && <p className="mt-2">{routeError ?? (routeInfo ? `${routeInfo.distance} · ${routeInfo.duration}` : "Wyznaczanie trasy…")}</p>}
+          {place.attributions?.map((attribution) => <p key={attribution.provider} className="mt-2 text-xs">{attribution.provider}</p>)}
+        </section>
+      )}
 
-        {!feature && (
-          <aside
-            className="no-scrollbar pointer-events-auto absolute bottom-32 left-4 top-20 hidden w-[350px] space-y-4 overflow-y-auto pr-1 md:block"
-            style={{ maskImage: "linear-gradient(to bottom, transparent 0%, black 4%, black 96%, transparent 100%)" }}
-          >
-            {filteredProperties.map((property) => (
-              <BiomimeticPropertyCard
-                key={property.id}
-                id={property.id}
-                title={property.title}
-                location={property.location}
-                price={property.price}
-                area={property.area}
-                rooms={property.rooms}
-                imageUrl={property.imageUrl}
-                ecoScore={property.ecoScore}
-                isLiked={savedIds.includes(property.id)}
-                onToggleLike={toggleSave}
-                onSelect={(id) => {
-                  setSelectedId(id);
-                  selectFeature(role === "buyer" ? "dom" : "op");
-                }}
-                onHoverChange={setHoveredId}
-              />
-            ))}
-          </aside>
-        )}
-
-        <nav
-          aria-label="Funkcje Living Map-OS"
-          className="no-scrollbar pointer-events-auto absolute bottom-16 right-3 top-20 flex flex-col items-end gap-2.5 overflow-y-auto py-1 pr-0.5"
-        >
-          {ROLE_FEATURES[role].map((featureId, index) => {
-            const item = FEATURES[featureId];
-            const Icon = item.icon;
-            const isActive = activeFeature === featureId;
-            return (
-              <button
-                key={featureId}
-                type="button"
-                onClick={() => selectFeature(featureId)}
-                aria-pressed={isActive}
-                className="group flex items-center gap-2.5 rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
-              >
-                <span
-                  className={`lbf-glass-clear rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${isActive ? "is-active" : ""}`}
-                >
-                  {item.label}
-                </span>
-                <span
-                  style={{ animationDelay: `-${index * 1.4}s` }}
-                  className={`lbf-droplet-3d flex h-[38px] w-[38px] shrink-0 items-center justify-center ${isActive ? "is-active" : ""}`}
-                >
-                  <Icon className="h-4 w-4 text-white drop-shadow" />
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <AnimatePresence>
-          {feature && (
-            <motion.section
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 pointer-events-none"
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveFeature(null);
-                  setActiveDrawer(null);
-                }}
-                className="lbf-glass-clear pointer-events-auto absolute left-4 top-14 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:top-4"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Mapa główna
-              </button>
-
-              <div className="lbf-glass-clear pointer-events-none absolute left-1/2 top-20 -translate-x-1/2 rounded-2xl px-3 py-1.5 text-center">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-white">
-                  {activeProperty?.title ?? "Willa Panorama"}
-                </p>
-                <h2 className="text-sm font-bold tracking-tight text-white">{feature.label}</h2>
-              </div>
-
-              {feature.isPlan ? (
-                <div className="pointer-events-auto absolute bottom-32 left-4 top-20 w-[min(430px,calc(100vw-32px))]">
-                  <div className="lbf-glass h-full overflow-hidden rounded-[36px] p-4">
-                    <svg viewBox="0 0 320 290" className="h-full w-full">
-                      {HOUSE_ROOMS.map((room) => {
-                        const selected = activeDrawer?.title === room.name;
-                        return (
-                          <g
-                            key={room.id}
-                            role="button"
-                            tabIndex={0}
-                            aria-label={`Zobacz ${room.name}`}
-                            onClick={() => {
-                              flyToProperty({ bearing: room.bearing, pitch: room.pitch, zoom: 17.2 });
-                              setStudioSource(room.img);
-                              setActiveDrawer({ title: room.name, desc: room.desc, img: room.img });
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key !== "Enter" && event.key !== " ") return;
-                              event.preventDefault();
-                              flyToProperty({ bearing: room.bearing, pitch: room.pitch, zoom: 17.2 });
-                              setStudioSource(room.img);
-                              setActiveDrawer({ title: room.name, desc: room.desc, img: room.img });
-                            }}
-                            className="group cursor-pointer"
-                          >
-                            <rect
-                              x={room.x}
-                              y={room.y}
-                              width={room.w}
-                              height={room.h}
-                              rx={20}
-                              className={`stroke-emerald-800/45 transition-all duration-300 dark:stroke-emerald-300/45 ${
-                                selected
-                                  ? "fill-emerald-700/75 stroke-amber-400"
-                                  : "fill-white/35 group-hover:fill-emerald-400/35 dark:fill-emerald-400/15"
-                              }`}
-                              strokeWidth={selected ? 2.5 : 1.5}
-                            />
-                            <text
-                              x={room.x + room.w / 2}
-                              y={room.y + room.h / 2 + 4}
-                              textAnchor="middle"
-                              className={`pointer-events-none text-[10px] font-semibold ${
-                                selected ? "fill-white" : "fill-stone-900 dark:fill-stone-100"
-                              }`}
-                            >
-                              {room.name}
-                            </text>
-                          </g>
-                        );
-                      })}
-                    </svg>
-                  </div>
-                </div>
-              ) : (
-                <div className="absolute bottom-28 left-4 top-24 flex w-[min(310px,calc(100vw-92px))] flex-col justify-center gap-4">
-                  {(feature.nodes ?? []).map((node, index) => (
-                    <motion.button
-                      key={node.title}
-                      type="button"
-                      initial={{ x: -24, opacity: 0 }}
-                      animate={{ x: index % 2 ? 18 : 0, opacity: 1 }}
-                      transition={{ delay: index * 0.06, type: "spring", stiffness: 280, damping: 22 }}
-                      onClick={() => {
-                        if (node.zoom !== undefined) {
-                          flyToProperty({
-                            zoom: node.zoom,
-                            pitch: node.pitch,
-                            bearing: node.bearing ?? 0,
-                          });
-                        }
-                        setActiveDrawer({ title: node.title, desc: node.desc, tool: node.tool });
-                      }}
-                      className={`lbf-glass-clear pointer-events-auto w-full max-w-[230px] rounded-[22px] px-3.5 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
-                        activeDrawer?.title === node.title ? "is-active" : ""
-                      }`}
-                    >
-                      <span className="block text-xs font-semibold text-white">{node.title}</span>
-                      <span className="mt-1 block text-[11px] leading-relaxed text-white/85">
-                        {node.desc}
-                      </span>
-                    </motion.button>
-                  ))}
-                </div>
-              )}
-            </motion.section>
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
-          {activeDrawer && (
-            <motion.aside
-              initial={{ y: 90, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 90, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 320, damping: 28 }}
-              className="lbf-glass pointer-events-auto absolute bottom-16 left-4 right-4 mx-auto max-h-[65vh] max-w-3xl overflow-y-auto rounded-[32px] p-5 md:right-48"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-bold">{activeDrawer.title}</h3>
-                  <p className="mt-0.5 text-xs text-stone-600 dark:text-stone-300">{activeDrawer.desc}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveDrawer(null)}
-                  aria-label="Zamknij panel"
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-stone-200/70 dark:bg-white/10"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              {activeDrawer.img && (
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <img src={activeDrawer.img} alt={activeDrawer.title} className="h-40 w-full rounded-[20px] object-cover" />
-                  <div className="flex flex-col justify-between rounded-[20px] bg-emerald-950/5 p-3.5 text-xs dark:bg-white/5">
-                    <span>Rzeczywista perspektywa widoku z okna została ustawiona na żywej mapie.</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveFeature("st");
-                        setActiveDrawer({
-                          title: "Studio FLUX.1",
-                          desc: "Edytuj kopię zdjęcia strefy za pomocą otwartego modelu FLUX.1 Kontext.",
-                          tool: "studio",
-                        });
-                      }}
-                      className="lbf-droplet-btn mt-3 py-2 text-center font-bold"
-                    >
-                      Przejdź do Studia FLUX.1 →
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {activeDrawer.place && (() => {
-                const place = activeDrawer.place;
-                const photo = place.photos?.find((item) => item.googleMapsURI);
-                const location = place.location?.toJSON();
-                return (
-                  <div className="mt-3 space-y-3 text-xs">
-                    {photo?.googleMapsURI && (
-                      <div>
-                        <img src={photo.getURI({ maxWidth: 800, maxHeight: 400 })} alt={place.displayName ?? "Zdjęcie miejsca"} className="h-36 w-full rounded-[20px] object-cover" />
-                        {photo.authorAttributions.map((author, index) => (
-                          <div key={`${author.displayName}-${index}`} className="mt-1 flex items-center gap-1 text-[10px]">
-                            {author.photoURI && <img src={author.photoURI} alt="" className="h-5 w-5 rounded-full" />}
-                            <span>Zdjęcie: {author.uri ? <a href={author.uri} target="_blank" rel="noreferrer" className="underline">{author.displayName}</a> : author.displayName}</span>
-                          </div>
-                        ))}
-                        <a href={photo.googleMapsURI} target="_blank" rel="noreferrer" className="mt-1 inline-block text-[10px] underline">Źródło zdjęcia w Google Maps</a>
-                      </div>
-                    )}
-                    <p translate="no" className="text-xs font-normal">Google Maps</p>
-                    <p>{place.rating != null ? `★ ${place.rating.toLocaleString("pl-PL")} / 5` : "Brak oceny"}</p>
-                    <details>
-                      <summary className="cursor-pointer font-bold">Godziny otwarcia</summary>
-                      {place.regularOpeningHours?.weekdayDescriptions.length
-                        ? place.regularOpeningHours.weekdayDescriptions.map((day) => <p key={day} className="mt-1">{day}</p>)
-                        : <p className="mt-1">Brak informacji o godzinach otwarcia.</p>}
-                    </details>
-                    {place.attributions?.map((attribution, index) => <p key={`${attribution.provider}-${index}`}>Dane: {attribution.providerURI ? <a href={attribution.providerURI} target="_blank" rel="noreferrer" className="underline">{attribution.provider}</a> : attribution.provider}</p>)}
-                    <div className="flex flex-wrap items-center gap-2">
-                      {place.nationalPhoneNumber && <a href={`tel:${place.nationalPhoneNumber.replace(/[^\d+]/g, "")}`} className="lbf-droplet-btn flex items-center gap-2 px-4 py-2 font-bold"><Phone className="h-3.5 w-3.5" />Zadzwoń</a>}
-                      {location && <button type="button" onClick={() => { setStreetViewTarget(location); setActiveDrawer(null); }} className="lbf-droplet-btn px-4 py-2 font-bold">Otwórz Street View</button>}
-                    </div>
-                    {location && (
-                      <div>
-                        <p className="mb-2 font-bold">Wyznacz trasę od domu</p>
-                        <div className="flex flex-wrap gap-2">
-                          {([["DRIVING", "Auto"], ["WALKING", "Pieszo"], ["BICYCLING", "Rower"]] as [RouteMode, string][]).map(([mode, label]) => (
-                            <button key={mode} type="button" disabled={!activeProperty} aria-pressed={routeDestination?.mode === mode} onClick={() => {
-                              setRouteInfo(null);
-                              setRouteDestination((current) => current?.mode === mode ? null : { ...location, mode });
-                            }} className={`rounded-full px-3 py-1.5 font-bold disabled:opacity-50 ${routeDestination?.mode === mode ? "bg-emerald-900 text-white" : "bg-stone-200/70 dark:bg-white/10"}`}>{label}</button>
-                          ))}
-                        </div>
-                        {routeDestination && <p className="mt-2" aria-live="polite">{routeError ?? (routeInfo ? `${routeInfo.distance} · ${routeInfo.duration}` : "Wyznaczanie trasy...")}</p>}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {activeDrawer.tool === "studio" && (
-                <form onSubmit={runFluxStudio} className="mt-3 space-y-2.5">
-                  <div className="flex flex-wrap gap-2">
-                    <input
-                      type="text"
-                      value={studioPrompt}
-                      onChange={(event) => setStudioPrompt(event.target.value)}
-                      placeholder="Np. Zmień światło na ciepły zachód słońca..."
-                      className="min-w-[200px] flex-1 rounded-full border border-stone-300 bg-white px-4 py-2 text-xs dark:border-emerald-600/40 dark:bg-emerald-950"
-                    />
-                    {(["2K", "4K", "8K"] as const).map((quality) => (
-                      <button
-                        key={quality}
-                        type="button"
-                        onClick={() => setStudioQuality(quality)}
-                        className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-                          studioQuality === quality
-                            ? "bg-emerald-900 text-white"
-                            : "bg-stone-200/70 dark:bg-white/10"
-                        }`}
-                      >
-                        {quality}
-                      </button>
-                    ))}
-                    <button
-                      type="submit"
-                      disabled={studioLoading || !studioPrompt.trim()}
-                      className="rounded-full bg-emerald-900 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
-                    >
-                      {studioLoading ? "FLUX.1 pracuje..." : "Generuj kopię"}
-                    </button>
-                  </div>
-                  {studioError && <p className="text-xs font-semibold text-rose-600">{studioError}</p>}
-                  {studioResult && (
-                    <img src={studioResult} alt="Wynik edycji FLUX.1" className="h-44 w-full rounded-[20px] border border-emerald-400 object-cover" />
-                  )}
-                </form>
-              )}
-
-              {activeDrawer.tool === "archive" && (
-                <div className="mt-3 space-y-2">
-                  <input
-                    type="text"
-                    value={archiveQuery}
-                    onChange={(event) => setArchiveQuery(event.target.value)}
-                    placeholder="Szukaj po treści zdjęcia..."
-                    className="w-full rounded-full border border-stone-300 bg-white px-4 py-2 text-xs dark:border-emerald-600/40 dark:bg-emerald-950"
-                  />
-                  <div className="flex items-center justify-between gap-3 text-xs">
-                    <span>Dopasowano strefy dla hasła: „{archiveQuery}”</span>
-                    <Link href="/properties" className="font-bold text-emerald-800 underline dark:text-emerald-300">
-                      Pełne archiwum →
-                    </Link>
-                  </div>
-                </div>
-              )}
-
-              {activeDrawer.tool === "marketing" && (
-                <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-stone-100/80 p-3 text-xs dark:bg-white/5">
-                  <span className="line-clamp-2">
-                    {activeProperty?.title} — {activeProperty?.location}, {activeProperty?.area} m². MLS: Felix Blau.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={copyMarketing}
-                    className="lbf-droplet-btn flex shrink-0 items-center gap-1 px-3 py-1.5 font-bold"
-                  >
-                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    {copied ? "Skopiowano" : "Kopiuj"}
-                  </button>
-                </div>
-              )}
-
-              {activeDrawer.tool === "contact" && (
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    setContactSent(true);
-                  }}
-                  className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
-                >
-                  <input required type="text" placeholder="Imię" className="rounded-full border border-stone-300 bg-white px-4 py-2 text-xs dark:border-emerald-600/40 dark:bg-emerald-950" />
-                  <input required type="text" placeholder="Telefon lub e-mail" className="rounded-full border border-stone-300 bg-white px-4 py-2 text-xs dark:border-emerald-600/40 dark:bg-emerald-950" />
-                  <button type="submit" className="rounded-full bg-emerald-900 px-5 py-2 text-xs font-bold text-white">
-                    {contactSent ? "Wysłano!" : "Wyślij"}
-                  </button>
-                </form>
-              )}
-
-              {(activeDrawer.tool === "audit" || activeDrawer.tool === "plans") && (
-                <div className="mt-3 flex justify-end">
-                  <Link
-                    href={activeDrawer.tool === "plans" ? "/billing" : "/properties"}
-                    className="lbf-droplet-btn px-5 py-2 text-xs font-bold"
-                  >
-                    {activeDrawer.tool === "plans" ? "Pakiety i płatność →" : "Otwórz pełny Audytor OCR →"}
-                  </Link>
-                </div>
-              )}
-            </motion.aside>
-          )}
-        </AnimatePresence>
+      <div className="pointer-events-none absolute bottom-6 left-1/2 z-20 w-[min(48rem,calc(100%-2rem))] -translate-x-1/2">
+        {message && <div role="status" className="crystal-dialog pointer-events-auto mb-3 p-3 text-sm">{message} <button type="button" className="underline" onClick={() => setMessage(null)}>Zamknij</button></div>}
+        <div className="pointer-events-auto mb-3 flex flex-wrap justify-center gap-2">
+          {suggestions.map((suggestion) => <button key={suggestion} type="button" className="crystal-chip px-3 py-2 text-sm font-medium" onClick={() => chooseSuggestion(suggestion)}>{suggestion}</button>)}
+          {ghost && <button type="button" className="crystal-chip px-3 py-2 text-sm" onClick={() => setText(`${query}${ghost} `)} aria-label={`Uzupełnij: ${ghost}`}>↹ {ghost}</button>}
+        </div>
+        <form onSubmit={submitQuery} className="crystal-dialog pointer-events-auto flex items-center gap-2 p-3">
+          <div className="relative min-w-0 flex-1 overflow-hidden">
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-2 py-3 text-base" style={{ textShadow: "none" }}>
+              <div style={{ transform: `translateX(-${scrollLeft}px)` }}><span className="text-transparent">{query}</span><span className="text-white/55">{ghost}</span></div>
+            </div>
+            <input ref={inputRef} aria-label="Zapytaj AI o nieruchomość" autoComplete="off" maxLength={1000} value={query} onChange={(event) => { setQuery(event.target.value); setCaretAtEnd(event.target.selectionStart === event.target.value.length); }} onSelect={(event) => setCaretAtEnd(event.currentTarget.selectionStart === event.currentTarget.value.length && event.currentTarget.selectionEnd === event.currentTarget.value.length)} onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)} onKeyDown={(event) => {
+              if (ghost && (event.key === "Tab" || event.key === "ArrowRight")) {
+                event.preventDefault();
+                setText(`${query}${ghost} `);
+              }
+            }} placeholder="Jak możemy Ci pomóc?" className="relative w-full bg-transparent px-2 py-3 text-base text-white outline-none placeholder:text-white/80" />
+          </div>
+          <button type="submit" disabled={busy || !query.trim()} className="crystal-chip px-5 py-3 font-semibold disabled:opacity-50">{busy ? "…" : "Go"}</button>
+        </form>
       </div>
-    </div>
+    </main>
   );
 }
