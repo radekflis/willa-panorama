@@ -41,6 +41,7 @@ interface BiomimeticMapProps {
   onCloseStreetView?: () => void;
   pickLocationMode?: boolean;
   onPickLocation?: (coords: MapPoint) => void;
+  terrainRequest?: number;
 }
 
 const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -62,6 +63,7 @@ export function BiomimeticPropertyMap({
   onCloseStreetView,
   pickLocationMode = false,
   onPickLocation,
+  terrainRequest,
 }: BiomimeticMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const callbacks = useRef({ onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onCloseStreetView, pickLocationMode, onPickLocation });
@@ -155,6 +157,10 @@ export function BiomimeticPropertyMap({
     if (!map) return;
     map.setMapTypeId(mapType);
   }, [map, mapType]);
+
+  useEffect(() => {
+    if (terrainRequest) setMapType("terrain");
+  }, [terrainRequest]);
 
   useEffect(() => {
     if (!map || !cycling) return;

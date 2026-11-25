@@ -12,6 +12,7 @@ import {
 } from "./biomimetic-property-map";
 import type { PropertyDetailData } from "./biomimetic-property-detail";
 import { predictSuffix } from "./crystal-prediction";
+import type { GeoIntelligence } from "../../app/api/geo/intelligence/route";
 
 export interface WorkspaceProperty extends PropertyDetailData {
   priceNumeric: number;
@@ -25,6 +26,34 @@ const TYPES = ["dom", "mieszkanie", "działkę", "apartament"];
 const LOCATIONS = ["w województwie pomorskim", "w dolnośląskim", "w mazowieckim", "nad jeziorem", "w górach"];
 
 type Intent = "sell" | "buy" | "area" | "unknown";
+type IntelligenceTab = "solar" | "air" | "terrain";
+type IntelligenceState = { key: string; status: "loading" | "error" } | { key: string; status: "ready"; data: GeoIntelligence };
+
+const intelligenceTabs: Array<{ id: IntelligenceTab; label: string }> = [
+  { id: "solar", label: "Słońce i Dach" },
+  { id: "air", label: "Powietrze i Alergeny" },
+  { id: "terrain", label: "Teren i Wysokość" },
+];
+
+function IntelligenceDetails({ tab, data }: { tab: IntelligenceTab; data: GeoIntelligence }) {
+  const number = (value: number | null | undefined, unit: string) =>
+    value == null ? "Brak danych" : `${new Intl.NumberFormat("pl-PL", { maximumFractionDigits: 1 }).format(value)} ${unit}`;
+  if (tab === "solar") {
+    return data.solar ? <div>
+      <p>Powierzchnia dachu: {number(data.solar.areaMeters2, "m²")}</p>
+      <p>Nasłonecznienie: {number(data.solar.maxSunshineHoursPerYear, "godz./rok")}</p>
+      <p>Potencjał paneli PV: {number(data.solar.maxArrayPanelsCount, "paneli")}</p>
+    </div> : <p>Brak danych o dachu dla tego miejsca.</p>;
+  }
+  if (tab === "terrain") return <p>Wysokość n.p.m.: {number(data.elevation, "m")}</p>;
+  return <div className="space-y-1">
+    <p>Jakość powietrza: {data.airQuality ? [data.airQuality.aqiDisplay, data.airQuality.category].filter(Boolean).join(" · ") || "Brak danych" : "Brak danych"}</p>
+    <p>Pogoda: {data.weather ? [data.weather.temperature == null ? null : number(data.weather.temperature, "°C"), data.weather.conditions].filter(Boolean).join(" · ") || "Brak danych" : "Brak danych"}</p>
+    <p>Pylenie: {!data.pollen?.length ? "Brak danych" : data.pollen.map((item) =>
+      `${item.displayName ?? item.code ?? "Pyłki"}: ${item.indexInfo?.category ?? (item.indexInfo?.value != null ? item.indexInfo.value : item.inSeason === false ? "poza sezonem" : "brak danych")}`,
+    ).join("; ")}</p>
+  </div>;
+}
 
 function localIntent(text: string): Intent {
   const value = text.toLocaleLowerCase("pl");
@@ -78,6 +107,10 @@ export function PropTechWorkspace({ properties: _properties }: { properties: Wor
   const [routeError, setRouteError] = useState<string | null>(null);
   const [streetView, setStreetView] = useState<MapPoint | null>(null);
   const [busy, setBusy] = useState(false);
+  const [intelligenceTab, setIntelligenceTab] = useState<{ key: string; tab: IntelligenceTab } | null>(null);
+  const [intelligence, setIntelligence] = useState<IntelligenceState | null>(null);
+  const [terrainRequest, setTerrainRequest] = useState(0);
+  const intelligenceRequest = useRef(0);
 
   const ghost = caretAtEnd ? predictSuffix(query) : "";
   const typeMatch = query.match(/^(Sprzedaję|Kupuję)\s+(dom|mieszkanie|działkę|apartament)(?:\s|$)/i);
@@ -169,6 +202,32 @@ export function PropTechWorkspace({ properties: _properties }: { properties: Wor
 
   const markers = useMemo(() => location ? [{ id: "wybrana", priceShort: "◇", ...location, ecoScore: 0 }] : [], [location]);
   const placeLocation = place?.location?.toJSON();
+  const intelligencePoint = sellerOpen ? location : placeLocation ?? location;
+  const intelligenceKey = intelligencePoint ? `${intelligencePoint.lat},${intelligencePoint.lng}` : null;
+  const activeIntelligenceTab = intelligenceTab?.key === intelligenceKey ? intelligenceTab.tab : null;
+  const currentIntelligence = intelligence?.key === intelligenceKey ? intelligence : null;
+
+  async function openIntelligence(tab: IntelligenceTab) {
+    if (!intelligencePoint || !intelligenceKey) return;
+    setIntelligenceTab({ key: intelligenceKey, tab });
+    if (tab === "terrain") setTerrainRequest((value) => value + 1);
+    if (currentIntelligence && currentIntelligence.status !== "error") return;
+    const requestId = ++intelligenceRequest.current;
+    setIntelligence({ key: intelligenceKey, status: "loading" });
+    try {
+      const response = await fetch("/api/geo/intelligence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(intelligencePoint),
+      });
+      if (!response.ok) throw new Error(`Analiza przestrzenna: HTTP ${response.status}`);
+      const data: GeoIntelligence = await response.json();
+      if (requestId === intelligenceRequest.current) setIntelligence({ key: intelligenceKey, status: "ready", data });
+    } catch (error) {
+      console.error("Nie udało się pobrać analizy przestrzennej:", error);
+      if (requestId === intelligenceRequest.current) setIntelligence({ key: intelligenceKey, status: "error" });
+    }
+  }
 
   return (
     <main className="relative h-[100dvh] w-full overflow-hidden bg-neutral-900">
@@ -192,6 +251,7 @@ export function PropTechWorkspace({ properties: _properties }: { properties: Wor
         onRouteError={setRouteError}
         streetViewTarget={streetView}
         onCloseStreetView={() => setStreetView(null)}
+        terrainRequest={terrainRequest}
       />
 
       {sellerOpen && (
@@ -235,6 +295,24 @@ export function PropTechWorkspace({ properties: _properties }: { properties: Wor
 
       <div className="pointer-events-none absolute bottom-6 left-1/2 z-20 w-[min(48rem,calc(100%-2rem))] -translate-x-1/2">
         {message && <div role="status" className="crystal-dialog pointer-events-auto mb-3 p-3 text-sm">{message} <button type="button" className="underline" onClick={() => setMessage(null)}>Zamknij</button></div>}
+        {intelligencePoint && (
+          <>
+            {activeIntelligenceTab && (
+              <section aria-label={intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label} className="crystal-dialog pointer-events-auto mb-3 max-h-[30dvh] overflow-y-auto bg-white/90 p-4 text-sm text-neutral-900 [text-shadow:none]">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h2 className="font-semibold">{intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label}</h2>
+                  <button type="button" className="crystal-chip px-2" aria-label="Zamknij analizę" onClick={() => setIntelligenceTab(null)}>×</button>
+                </div>
+                {currentIntelligence?.status === "ready" ? <IntelligenceDetails tab={activeIntelligenceTab} data={currentIntelligence.data} />
+                  : currentIntelligence?.status === "error" ? <p role="alert">Nie udało się pobrać analizy. Kliknij ponownie, aby spróbować.</p>
+                    : <p role="status">Pobieranie danych…</p>}
+              </section>
+            )}
+            <div className="pointer-events-auto mb-3 flex flex-wrap justify-center gap-2">
+              {intelligenceTabs.map(({ id, label }) => <button key={id} type="button" aria-pressed={activeIntelligenceTab === id} className={`crystal-chip px-3 py-2 text-sm font-semibold ${activeIntelligenceTab === id ? "ring-2 ring-neutral-700" : ""}`} onClick={() => void openIntelligence(id)}>{label}</button>)}
+            </div>
+          </>
+        )}
         <div className="pointer-events-auto mb-3 flex flex-wrap justify-center gap-2">
           {suggestions.map((suggestion) => <button key={suggestion} type="button" className="crystal-chip px-3 py-2 text-sm font-medium" onClick={() => chooseSuggestion(suggestion)}>{suggestion}</button>)}
           {ghost && <button type="button" className="crystal-chip px-3 py-2 text-sm" onClick={() => setText(`${query}${ghost} `)} aria-label={`Uzupełnij: ${ghost}`}>↹ {ghost}</button>}
