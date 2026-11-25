@@ -384,30 +384,32 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
 
       <div className="pointer-events-none absolute inset-0 z-20">
         <header className="pointer-events-auto absolute left-1/2 top-4 z-40 flex max-w-[96vw] -translate-x-1/2 flex-col items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-full border border-white/85 bg-white/80 p-1.5 shadow-xl backdrop-blur-2xl dark:border-emerald-400/25 dark:bg-emerald-950/75">
+          <div className="lbf-glass-clear flex items-center gap-0.5 rounded-full p-1">
             {(Object.keys(ROLE_LABELS) as RoleId[]).map((roleId) => (
               <button
                 key={roleId}
                 type="button"
+                aria-pressed={role === roleId}
                 onClick={() => {
                   setRole(roleId);
                   setActiveFeature(null);
                   setActiveDrawer(null);
                 }}
-                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                className={`rounded-full border px-2 py-1 text-[11px] font-medium text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:px-3 ${
                   role === roleId
-                    ? "bg-emerald-900 text-white shadow dark:bg-emerald-400 dark:text-emerald-950"
-                    : "text-stone-700 hover:bg-black/5 dark:text-stone-200 dark:hover:bg-white/10"
+                    ? "border-emerald-300/60 bg-emerald-500/35"
+                    : "border-transparent hover:bg-white/15"
                 }`}
               >
                 {ROLE_LABELS[roleId]}
               </button>
             ))}
-            <span className="mx-1 h-4 w-px bg-stone-300/70 dark:bg-emerald-700/50" />
+            <span className="mx-1 h-4 w-px bg-white/35" />
             <button
               type="button"
               onClick={() => setShowFilter((visible) => !visible)}
-              className="rounded-full px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-black/5 dark:text-stone-200 dark:hover:bg-white/10"
+              aria-expanded={showFilter}
+              className="rounded-full px-3 py-1 text-[11px] font-medium text-white hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
               Filtr
             </button>
@@ -415,7 +417,7 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
               type="button"
               onClick={toggleDark}
               aria-label="Przełącz Dzień / Noc"
-              className="flex h-8 items-center gap-1 rounded-full bg-white/70 px-2 text-xs text-stone-800 dark:bg-emerald-900/70 dark:text-emerald-300"
+              className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-white hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
               {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
               <span className="hidden sm:inline">{isDark ? "Dzień" : "Noc"}</span>
@@ -484,24 +486,19 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
                 key={featureId}
                 type="button"
                 onClick={() => selectFeature(featureId)}
-                className="group flex items-center gap-2.5 focus:outline-none"
+                aria-pressed={isActive}
+                className="group flex items-center gap-2.5 rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
               >
                 <span
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold shadow-sm backdrop-blur-xl transition-all ${
-                    isActive
-                      ? "border-emerald-400 bg-emerald-900 text-white shadow-lg"
-                      : "border-white/85 bg-white/80 text-stone-800 dark:border-emerald-400/25 dark:bg-emerald-950/75 dark:text-stone-100"
-                  }`}
+                  className={`lbf-glass-clear rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${isActive ? "is-active" : ""}`}
                 >
                   {item.label}
                 </span>
                 <span
                   style={{ animationDelay: `-${index * 1.4}s` }}
-                  className={`lbf-droplet-3d flex h-12 w-12 items-center justify-center text-emerald-950 dark:text-emerald-100 ${
-                    isActive ? "ring-2 ring-amber-300" : ""
-                  }`}
+                  className={`lbf-droplet-3d flex h-[38px] w-[38px] shrink-0 items-center justify-center ${isActive ? "is-active" : ""}`}
                 >
-                  <Icon className="h-5 w-5" />
+                  <Icon className="h-4 w-4 text-white drop-shadow" />
                 </span>
               </button>
             );
@@ -522,17 +519,17 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
                   setActiveFeature(null);
                   setActiveDrawer(null);
                 }}
-                className="lbf-droplet-3d pointer-events-auto absolute left-4 top-4 flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold"
+                className="lbf-glass-clear pointer-events-auto absolute left-4 top-14 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:top-4"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 Mapa główna
               </button>
 
-              <div className="pointer-events-none absolute left-1/2 top-20 -translate-x-1/2 text-center">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-800 drop-shadow-sm dark:text-emerald-300">
+              <div className="lbf-glass-clear pointer-events-none absolute left-1/2 top-20 -translate-x-1/2 rounded-2xl px-3 py-1.5 text-center">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-white">
                   {activeProperty?.title ?? "Willa Panorama"}
                 </p>
-                <h2 className="text-xl font-bold tracking-tight drop-shadow-md">{feature.label}</h2>
+                <h2 className="text-sm font-bold tracking-tight text-white">{feature.label}</h2>
               </div>
 
               {feature.isPlan ? (
@@ -609,12 +606,12 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
                         }
                         setActiveDrawer({ title: node.title, desc: node.desc, tool: node.tool });
                       }}
-                      className={`lbf-droplet-3d pointer-events-auto w-full px-5 py-4 text-left ${
-                        activeDrawer?.title === node.title ? "ring-2 ring-amber-300" : ""
+                      className={`lbf-glass-clear pointer-events-auto w-full max-w-[230px] rounded-[22px] px-3.5 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
+                        activeDrawer?.title === node.title ? "is-active" : ""
                       }`}
                     >
-                      <span className="block text-xs font-bold">{node.title}</span>
-                      <span className="mt-1 block text-[10px] leading-relaxed text-stone-700 dark:text-emerald-100/80">
+                      <span className="block text-xs font-semibold text-white">{node.title}</span>
+                      <span className="mt-1 block text-[11px] leading-relaxed text-white/85">
                         {node.desc}
                       </span>
                     </motion.button>

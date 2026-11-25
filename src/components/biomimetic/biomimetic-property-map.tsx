@@ -206,8 +206,8 @@ export function BiomimeticPropertyMap({
   useEffect(() => {
     markerButtons.current.forEach((button, id) => {
       const highlighted = id === hoveredId || id === selectedId;
-      button.className = `absolute -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-bold shadow-lg backdrop-blur-xl transition-transform hover:scale-110 ${
-        highlighted ? "scale-110 border-emerald-400 bg-emerald-900 text-white" : "border-white/90 bg-white/90 text-stone-900"
+      button.className = `lbf-glass-clear absolute -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-bold transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
+        highlighted ? "is-active scale-110" : ""
       }`;
     });
   }, [map, properties, hoveredId, selectedId]);
@@ -309,14 +309,14 @@ export function BiomimeticPropertyMap({
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" aria-label="Interaktywna mapa Google" />
       {!streetVisible && (
-        <div className="absolute bottom-12 left-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap gap-1 rounded-3xl border border-white/85 bg-white/85 p-1.5 shadow-xl backdrop-blur-xl">
+        <div className="lbf-glass-clear absolute bottom-12 left-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap gap-1 rounded-full p-1">
           {([["hybrid", "Satelita HD"], ["roadmap", "Mapa"], ["terrain", "Teren / Szlaki"]] as const).map(([type, label]) => (
-            <button key={type} type="button" aria-pressed={mapType === type} onClick={() => setMapType(type)} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${mapType === type ? "bg-emerald-900 text-white" : "text-stone-800 hover:bg-stone-200"}`}>{label}</button>
+            <button key={type} type="button" aria-pressed={mapType === type} onClick={() => setMapType(type)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${mapType === type ? "border-emerald-300/60 bg-emerald-500/35" : "border-transparent hover:bg-white/15"}`}>{label}</button>
           ))}
-          <button type="button" aria-pressed={cycling} onClick={() => setCycling((value) => !value)} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${cycling ? "bg-emerald-900 text-white" : "text-stone-800 hover:bg-stone-200"}`}>Rower</button>
+          <button type="button" aria-pressed={cycling} onClick={() => setCycling((value) => !value)} className={`rounded-full border px-3 py-1.5 text-xs font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${cycling ? "border-emerald-300/60 bg-emerald-500/35" : "border-transparent hover:bg-white/15"}`}>Rower</button>
         </div>
       )}
-      {streetVisible && <button type="button" onClick={() => map?.getStreetView().setVisible(false)} className="absolute bottom-12 left-4 z-10 rounded-full border border-white/85 bg-white/90 px-4 py-2 text-xs font-bold text-stone-900 shadow-xl backdrop-blur-xl">← Powrót do mapy</button>}
+      {streetVisible && <button type="button" onClick={() => map?.getStreetView().setVisible(false)} className="lbf-glass-clear absolute bottom-12 left-4 z-10 rounded-full px-3 py-1.5 text-[11px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">← Powrót do mapy</button>}
       {(error || routeError || routeWarnings.length > 0) && (
         <div role="status" className="absolute left-4 top-20 z-10 max-w-sm rounded-2xl bg-white/95 p-3 text-xs text-stone-900 shadow-lg">
           {error && <p>{error}</p>}
