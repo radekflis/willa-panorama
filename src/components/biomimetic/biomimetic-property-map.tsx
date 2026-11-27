@@ -37,6 +37,8 @@ interface BiomimeticMapProps {
   routeOrigin?: MapPoint;
   onRouteInfo?: (info: RouteInfo | null) => void;
   onRouteError?: (error: string | null) => void;
+  onMapError: (error: string | null) => void;
+  onRouteWarnings?: (warnings: string[]) => void;
   streetViewTarget?: MapPoint | null;
   onCloseStreetView?: () => void;
   pickLocationMode?: boolean;
@@ -60,6 +62,8 @@ export function BiomimeticPropertyMap({
   routeOrigin,
   onRouteInfo,
   onRouteError,
+  onMapError,
+  onRouteWarnings,
   streetViewTarget,
   onCloseStreetView,
   pickLocationMode = false,
@@ -69,20 +73,19 @@ export function BiomimeticPropertyMap({
 }: BiomimeticMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const container3dRef = useRef<HTMLDivElement>(null);
-  const callbacks = useRef({ onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onCloseStreetView, pickLocationMode, onPickLocation });
-  callbacks.current = { onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onCloseStreetView, pickLocationMode, onPickLocation };
-  const markerButtons = useRef(new Map<string, HTMLButtonElement>());
+  const callbacks = useRef({ onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onRouteWarnings, onMapError, onCloseStreetView, pickLocationMode, onPickLocation });
+  callbacks.current = { onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onRouteWarnings, onMapError, onCloseStreetView, pickLocationMode, onPickLocation };
+  const markers2d = useRef(new Map<string, google.maps.Marker>());
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [map3d, setMap3d] = useState<google.maps.maps3d.Map3DElement | null>(null);
   const [maps3dLibrary, setMaps3dLibrary] = useState<google.maps.Maps3DLibrary | null>(null);
   const [mapType, setMapType] = useState<"earth3d" | "hybrid" | "roadmap" | "terrain">("earth3d");
-  const [cycling, setCycling] = useState(false);
-  const [streetVisible, setStreetVisible] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [routeError, setRouteError] = useState<string | null>(null);
-  const [routeWarnings, setRouteWarnings] = useState<string[]>([]);
   const placeRequest = useRef(0);
   const lastOrbit = useRef<BiomimeticMapProps["orbitTarget"]>(null);
+
+  useEffect(() => {
+    if (!apiKey) callbacks.current.onMapError("Google Maps wymaga klucza API. Dodaj NEXT_PUBLIC_GOOGLE_MAPS_API_KEY do konfiguracji i uruchom aplikację ponownie.");
+  }, []);
 
   useEffect(() => {
     if (!apiKey || !containerRef.current) return;
@@ -102,6 +105,7 @@ export function BiomimeticPropertyMap({
           importLibrary("places"),
           importLibrary("routes"),
           importLibrary("streetView"),
+          importLibrary("marker"),
         ]);
         if (cancelled || !containerRef.current) return;
         instance = new Map(containerRef.current, {
@@ -112,15 +116,17 @@ export function BiomimeticPropertyMap({
           renderingType: google.maps.RenderingType.VECTOR,
           tiltInteractionEnabled: true,
           headingInteractionEnabled: true,
-          mapTypeControl: false,
-          streetViewControl: false,
-          fullscreenControl: false,
+          disableDefaultUI: false,
+          mapTypeControl: true,
+          zoomControl: true,
+          streetViewControl: true,
+          rotateControl: true,
+          fullscreenControl: true,
+          scaleControl: true,
         });
         const panorama = instance.getStreetView();
         visibleListener = panorama.addListener("visible_changed", () => {
-          const visible = panorama.getVisible();
-          setStreetVisible(visible);
-          if (!visible) callbacks.current.onCloseStreetView?.();
+          if (!panorama.getVisible()) callbacks.current.onCloseStreetView?.();
         });
         clickListener = instance.addListener("click", async (event: google.maps.MapMouseEvent | google.maps.IconMouseEvent) => {
           if (callbacks.current.pickLocationMode) {
@@ -131,7 +137,7 @@ export function BiomimeticPropertyMap({
           if (!("placeId" in event) || !event.placeId) return;
           event.stop();
           const request = ++placeRequest.current;
-          setError(null);
+          callbacks.current.onMapError(null);
           try {
             const place = new Place({ id: event.placeId, requestedLanguage: "pl" });
             await place.fetchFields({
@@ -140,13 +146,13 @@ export function BiomimeticPropertyMap({
             if (!cancelled && request === placeRequest.current) callbacks.current.onSelectGooglePlace(place);
           } catch (cause) {
             console.error("Nie udało się pobrać miejsca Google:", cause);
-            if (!cancelled && request === placeRequest.current) setError("Nie udało się pobrać informacji o miejscu. Sprawdź dostęp do Places API (New).");
+            if (!cancelled && request === placeRequest.current) callbacks.current.onMapError("Nie udało się pobrać informacji o miejscu. Sprawdź dostęp do Places API (New).");
           }
         });
         setMap(instance);
       } catch (cause) {
         console.error("Nie udało się załadować Google Maps:", cause);
-        if (!cancelled) setError("Nie udało się załadować Google Maps. Sprawdź klucz, dostęp do API i połączenie.");
+        if (!cancelled) callbacks.current.onMapError("Nie udało się załadować Google Maps. Sprawdź klucz, dostęp do API i połączenie.");
       }
     }
 
@@ -177,6 +183,7 @@ export function BiomimeticPropertyMap({
           range: 1800,
           tilt: 62,
           heading: 20,
+          defaultUIHidden: false,
         });
         instance.style.width = "100%";
         instance.style.height = "100%";
@@ -189,7 +196,7 @@ export function BiomimeticPropertyMap({
           if (!("placeId" in event)) return;
           event.preventDefault();
           const request = ++placeRequest.current;
-          setError(null);
+          callbacks.current.onMapError(null);
           void importLibrary("places").then(async ({ Place }) => {
             const place = new Place({ id: event.placeId, requestedLanguage: "pl" });
             await place.fetchFields({
@@ -198,12 +205,12 @@ export function BiomimeticPropertyMap({
             if (!cancelled && request === placeRequest.current) callbacks.current.onSelectGooglePlace(place);
           }).catch((cause) => {
             console.error("Nie udało się pobrać miejsca Google:", cause);
-            if (!cancelled && request === placeRequest.current) setError("Nie udało się pobrać informacji o miejscu. Sprawdź dostęp do Places API (New).");
+            if (!cancelled && request === placeRequest.current) callbacks.current.onMapError("Nie udało się pobrać informacji o miejscu. Sprawdź dostęp do Places API (New).");
           });
         };
         onError = () => {
           console.error("Błąd renderowania mapy 3D Google.");
-          setError("Nie udało się wyświetlić mapy 3D. Sprawdź dostęp do Maps JavaScript API i połączenie.");
+          callbacks.current.onMapError("Nie udało się wyświetlić mapy 3D. Sprawdź dostęp do Maps JavaScript API i połączenie.");
         };
         instance.addEventListener("gmp-click", onClick);
         instance.addEventListener("gmp-error", onError);
@@ -212,7 +219,7 @@ export function BiomimeticPropertyMap({
         setMap3d(instance);
       } catch (cause) {
         console.error("Nie udało się załadować mapy 3D:", cause);
-        if (!cancelled) setError("Nie udało się załadować mapy 3D. Sprawdź dostęp do Maps JavaScript API i połączenie.");
+        if (!cancelled) callbacks.current.onMapError("Nie udało się załadować mapy 3D. Sprawdź dostęp do Maps JavaScript API i połączenie.");
       }
     }
 
@@ -227,7 +234,6 @@ export function BiomimeticPropertyMap({
 
   function changeMapType(type: "earth3d" | "hybrid" | "roadmap" | "terrain") {
     if (type === "earth3d") {
-      setCycling(false);
       if (mapType !== "earth3d" && map && map3d) {
         const center = map.getCenter();
         if (center) {
@@ -237,9 +243,12 @@ export function BiomimeticPropertyMap({
           map3d.heading = map.getHeading() ?? 0;
         }
       }
-    } else if (mapType === "earth3d" && map && map3d?.center) {
-      map.setCenter({ lat: map3d.center.lat, lng: map3d.center.lng });
-      if (map3d.range) map.setZoom(Math.max(0, Math.min(21, 17 - Math.log2(map3d.range / 350))));
+    } else if (map) {
+      if (mapType === "earth3d" && map3d?.center) {
+        map.setCenter({ lat: map3d.center.lat, lng: map3d.center.lng });
+        if (map3d.range) map.setZoom(Math.max(0, Math.min(21, 17 - Math.log2(map3d.range / 350))));
+      }
+      map.setMapTypeId(type);
     }
     setMapType(type);
   }
@@ -272,7 +281,6 @@ export function BiomimeticPropertyMap({
 
   useEffect(() => {
     if (orbitTarget) {
-      setCycling(false);
       setMapType("earth3d");
     }
   }, [orbitTarget]);
@@ -293,13 +301,6 @@ export function BiomimeticPropertyMap({
   useEffect(() => {
     if (terrainRequest) changeMapType("terrain");
   }, [terrainRequest]);
-
-  useEffect(() => {
-    if (!map || !cycling) return;
-    const layer = new google.maps.BicyclingLayer();
-    layer.setMap(map);
-    return () => layer.setMap(null);
-  }, [map, cycling]);
 
   useEffect(() => {
     if (!map || !cameraTarget) return;
@@ -336,54 +337,34 @@ export function BiomimeticPropertyMap({
 
   useEffect(() => {
     if (!map) return;
-    const overlayMap = map;
-    class PriceOverlay extends google.maps.OverlayView {
-      private button: HTMLButtonElement;
-      constructor(private property: PropertyMarkerData) {
-        super();
-        this.button = document.createElement("button");
-        this.button.type = "button";
-        this.button.textContent = property.priceShort;
-        this.button.setAttribute("aria-label", `Nieruchomość: ${property.priceShort}`);
-        markerButtons.current.set(property.id, this.button);
-        this.button.addEventListener("click", () => {
-          overlayMap.panTo({ lat: property.lat, lng: property.lng });
-          overlayMap.moveCamera({ zoom: 17, tilt: 60, heading: 0 });
-          callbacks.current.onSelect(property.id);
-        });
-        this.button.addEventListener("mouseenter", () => callbacks.current.onHover(property.id));
-        this.button.addEventListener("mouseleave", () => callbacks.current.onHover(null));
-        google.maps.OverlayView.preventMapHitsAndGesturesFrom(this.button);
-      }
-      onAdd() {
-        this.getPanes()?.overlayMouseTarget.appendChild(this.button);
-      }
-      draw() {
-        const point = this.getProjection().fromLatLngToDivPixel(new google.maps.LatLng(this.property.lat, this.property.lng));
-        if (point) {
-          this.button.style.left = `${point.x}px`;
-          this.button.style.top = `${point.y}px`;
-        }
-      }
-      onRemove() {
-        this.button.remove();
-        markerButtons.current.delete(this.property.id);
-      }
-    }
-    const overlays = properties.map((property) => {
-      const overlay = new PriceOverlay(property);
-      overlay.setMap(map);
-      return overlay;
+    const markers = properties.map((property) => {
+      const marker = new google.maps.Marker({
+        map,
+        position: { lat: property.lat, lng: property.lng },
+        title: `Nieruchomość: ${property.priceShort}`,
+      });
+      markers2d.current.set(property.id, marker);
+      marker.addListener("click", () => {
+        map.panTo({ lat: property.lat, lng: property.lng });
+        map.moveCamera({ zoom: 17, tilt: 60, heading: 0 });
+        callbacks.current.onSelect(property.id);
+      });
+      marker.addListener("mouseover", () => callbacks.current.onHover(property.id));
+      marker.addListener("mouseout", () => callbacks.current.onHover(null));
+      return marker;
     });
-    return () => overlays.forEach((overlay) => overlay.setMap(null));
+    return () => {
+      markers.forEach((marker) => {
+        google.maps.event.clearInstanceListeners(marker);
+        marker.setMap(null);
+      });
+      markers2d.current.clear();
+    };
   }, [map, properties]);
 
   useEffect(() => {
-    markerButtons.current.forEach((button, id) => {
-      const highlighted = id === hoveredId || id === selectedId;
-      button.className = `crystal-chip absolute -translate-x-1/2 -translate-y-full whitespace-nowrap px-3.5 py-1.5 text-xs font-bold transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
-        highlighted ? "scale-110" : ""
-      }`;
+    markers2d.current.forEach((marker, id) => {
+      marker.setZIndex(id === hoveredId || id === selectedId ? google.maps.Marker.MAX_ZINDEX + 1 : undefined);
     });
   }, [map, properties, hoveredId, selectedId]);
 
@@ -393,11 +374,9 @@ export function BiomimeticPropertyMap({
     let polylines: google.maps.Polyline[] = [];
     callbacks.current.onRouteInfo?.(null);
     callbacks.current.onRouteError?.(null);
-    setRouteError(null);
-    setRouteWarnings([]);
+    callbacks.current.onRouteWarnings?.([]);
     if (!routeDestination) return;
     if (!routeOrigin) {
-      setRouteError("Wybierz nieruchomość, aby wyznaczyć trasę.");
       callbacks.current.onRouteError?.("Wybierz nieruchomość, aby wyznaczyć trasę.");
       return;
     }
@@ -422,13 +401,12 @@ export function BiomimeticPropertyMap({
         polylines = route.createPolylines();
         polylines.forEach((line) => line.setMap(routeMap));
         if (route.viewport) routeMap.fitBounds(route.viewport, 80);
-        setRouteWarnings(route.warnings ?? []);
+        callbacks.current.onRouteWarnings?.(route.warnings ?? []);
         callbacks.current.onRouteInfo?.({ distance: route.localizedValues.distance, duration: route.localizedValues.duration });
       } catch (cause) {
         console.error("Nie udało się wyznaczyć trasy:", cause);
         if (!cancelled) {
           const message = "Nie udało się wyznaczyć trasy. Sprawdź dostęp do Routes API lub wybierz inny środek transportu.";
-          setRouteError(message);
           callbacks.current.onRouteError?.(message);
         }
       }
@@ -448,7 +426,7 @@ export function BiomimeticPropertyMap({
       return;
     }
     let cancelled = false;
-    setError(null);
+    callbacks.current.onMapError(null);
     const service = new google.maps.StreetViewService();
     void service.getPanorama({ location: streetViewTarget, radius: 50 }).then(() => {
       if (cancelled) return;
@@ -457,50 +435,17 @@ export function BiomimeticPropertyMap({
     }).catch((cause) => {
       console.error("Street View niedostępny:", cause);
       if (!cancelled) {
-        setError("Street View nie jest dostępny w pobliżu tego miejsca.");
+        callbacks.current.onMapError("Street View nie jest dostępny w pobliżu tego miejsca.");
         callbacks.current.onCloseStreetView?.();
       }
     });
     return () => { cancelled = true; };
   }, [map, streetViewTarget]);
 
-  if (!apiKey) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-neutral-900 p-6 text-center">
-        <div className="crystal-dialog max-w-md p-6">
-          <p className="text-sm font-semibold">Google Maps wymaga klucza API</p>
-          <p className="mt-2 text-xs">Dodaj NEXT_PUBLIC_GOOGLE_MAPS_API_KEY do .env.local i konfiguracji wdrożenia, a następnie uruchom aplikację ponownie.</p>
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            {properties.map((property) => (
-              <button key={property.id} type="button" onClick={() => onSelect(property.id)} className="crystal-chip px-3 py-1.5 text-xs font-semibold">{property.priceShort}</button>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className={mapType === "earth3d" ? "hidden h-full w-full" : "h-full w-full"} aria-label="Interaktywna mapa Google" />
       <div ref={container3dRef} className={mapType === "earth3d" ? "h-full w-full" : "hidden h-full w-full"} aria-label="Interaktywna mapa Google 3D" />
-      {!streetVisible && (
-        <div className="absolute left-4 top-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap gap-2">
-          {([["earth3d", "Earth 3D"], ["hybrid", "Satelita"], ["roadmap", "Mapa"], ["terrain", "Teren"]] as const).map(([type, label]) => (
-            <button key={type} type="button" aria-pressed={mapType === type} onClick={() => changeMapType(type)} className={`crystal-chip px-3 py-1.5 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${mapType === type ? "ring-2 ring-white" : ""}`}>{label}</button>
-          ))}
-          <button type="button" aria-pressed={cycling} onClick={() => { if (!cycling && mapType === "earth3d") changeMapType("hybrid"); setCycling((value) => !value); }} className={`crystal-chip px-3 py-1.5 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${cycling ? "ring-2 ring-white" : ""}`}>Rower</button>
-        </div>
-      )}
-      {streetVisible && <button type="button" onClick={() => map?.getStreetView().setVisible(false)} className="crystal-chip absolute left-4 top-4 z-10 px-3 py-1.5 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">← Powrót do mapy</button>}
-      {(error || routeError || routeWarnings.length > 0) && (
-        <div role="status" className="absolute left-4 top-20 z-10 max-w-sm rounded-2xl bg-white/95 p-3 text-xs text-stone-900 shadow-lg">
-          {error && <p>{error}</p>}
-          {routeError && <p>{routeError}</p>}
-          {routeWarnings.map((warning) => <p key={warning}>{warning}</p>)}
-          {error && <button type="button" onClick={() => setError(null)} className="mt-1 font-bold underline">Zamknij</button>}
-        </div>
-      )}
     </div>
   );
 }

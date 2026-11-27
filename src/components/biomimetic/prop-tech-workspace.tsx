@@ -91,6 +91,7 @@ function FileDrop({ title, accept, file, onFile }: {
 
 export function PropTechWorkspace({ properties }: { properties: WorkspaceProperty[] }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const restoreRef = useRef<HTMLButtonElement>(null);
   const [query, setQuery] = useState("");
   const [scrollLeft, setScrollLeft] = useState(0);
   const [caretAtEnd, setCaretAtEnd] = useState(true);
@@ -100,6 +101,8 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   const [video, setVideo] = useState<File | null>(null);
   const [plan, setPlan] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [minimized, setMinimized] = useState(false);
   const [cameraTarget, setCameraTarget] = useState<MapCameraTarget | null>(null);
   const [orbitTarget, setOrbitTarget] = useState<(MapPoint & { ts: number }) | null>(null);
   const orbitSequence = useRef(0);
@@ -108,6 +111,7 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   const [route, setRoute] = useState<RouteDestination | null>(null);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
+  const [routeWarnings, setRouteWarnings] = useState<string[]>([]);
   const [streetView, setStreetView] = useState<MapPoint | null>(null);
   const [busy, setBusy] = useState(false);
   const [intelligenceTab, setIntelligenceTab] = useState<{ key: string; tab: IntelligenceTab } | null>(null);
@@ -262,13 +266,35 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
         routeDestination={route}
         onRouteInfo={setRouteInfo}
         onRouteError={setRouteError}
+        onMapError={setMapError}
+        onRouteWarnings={setRouteWarnings}
         streetViewTarget={streetView}
         onCloseStreetView={() => setStreetView(null)}
         terrainRequest={terrainRequest}
       />
 
+      {minimized ? (
+        <div className="pointer-events-none fixed bottom-6 left-1/2 z-20 -translate-x-1/2">
+          <button ref={restoreRef} type="button" onClick={() => {
+            setMinimized(false);
+            requestAnimationFrame(() => inputRef.current?.focus());
+          }} className="crystal-chip pointer-events-auto px-4 py-2 text-sm font-semibold" aria-label="Przywróć okno AI">AI +</button>
+        </div>
+      ) : (
+      <div className="pointer-events-none fixed left-1/2 top-1/2 z-20 w-[90vw] max-w-[460px] -translate-x-1/2 -translate-y-1/2">
+        <div className="pointer-events-none absolute bottom-full left-0 mb-3 flex max-h-[25dvh] w-full flex-wrap justify-center gap-2 overflow-y-auto">
+          {suggestions.map((suggestion) => <button key={suggestion} type="button" className="crystal-chip pointer-events-auto px-3 py-2 text-sm font-medium" onClick={() => chooseSuggestion(suggestion)}>{suggestion}</button>)}
+          {ghost && <button type="button" className="crystal-chip pointer-events-auto px-3 py-2 text-sm" onClick={() => setText(`${query}${ghost} `)} aria-label={`Uzupełnij: ${ghost}`}>↹ {ghost}</button>}
+        </div>
+        <div className="crystal-dialog pointer-events-auto relative flex min-h-[120px] max-h-[60dvh] flex-col gap-3 p-5">
+          <button type="button" onClick={() => {
+            setScrollLeft(0);
+            setMinimized(true);
+            requestAnimationFrame(() => restoreRef.current?.focus());
+          }} aria-label="Minimalizuj okno AI" className="crystal-chip absolute right-3 top-3 z-10 px-2 py-1 text-sm leading-none">−</button>
+          <div className="min-h-0 overflow-y-auto pr-8 text-sm">
       {sellerOpen && (
-        <section aria-label="Przygotowanie spaceru 3D" className="crystal-dialog absolute right-4 top-20 z-20 max-h-[55dvh] w-[min(24rem,calc(100%-2rem))] overflow-y-auto p-5 text-sm">
+        <section aria-label="Przygotowanie spaceru 3D" className="mb-3 pt-1">
           <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="font-semibold">Przygotuj spacer 3D</h2>
             <button type="button" onClick={() => setSellerOpen(false)} aria-label="Zamknij" className="crystal-chip px-2 py-1">×</button>
@@ -291,7 +317,7 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
       )}
 
       {place && !sellerOpen && (
-        <section aria-label="Miejsce Google" className="crystal-dialog absolute right-4 top-20 z-20 w-[min(22rem,calc(100%-2rem))] p-5 text-sm">
+        <section aria-label="Miejsce Google" className="mb-3 pt-1">
           <div className="flex justify-between gap-3"><h2 className="font-semibold">{place.displayName ?? "Miejsce Google"}</h2><button type="button" onClick={() => setPlace(null)} aria-label="Zamknij" className="crystal-chip px-2">×</button></div>
           {place.rating != null && <p className="mt-2">Ocena: {place.rating} / 5</p>}
           {place.nationalPhoneNumber && <p className="mt-2">{place.nationalPhoneNumber}</p>}
@@ -306,12 +332,13 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
         </section>
       )}
 
-      <div className="pointer-events-none absolute bottom-6 left-1/2 z-20 w-[min(48rem,calc(100%-2rem))] -translate-x-1/2">
-        {message && <div role="status" className="crystal-dialog pointer-events-auto mb-3 p-3 text-sm">{message} <button type="button" className="underline" onClick={() => setMessage(null)}>Zamknij</button></div>}
+        {mapError && <p role="alert" className="mb-3 pr-8">{mapError} <button type="button" className="underline" onClick={() => setMapError(null)}>Zamknij</button></p>}
+        {message && <p role="status" className="mb-3 pr-8">{message} <button type="button" className="underline" onClick={() => setMessage(null)}>Zamknij</button></p>}
+        {routeWarnings.map((warning) => <p key={warning} className="mb-2 text-xs">{warning}</p>)}
         {intelligencePoint && (
           <>
             {activeIntelligenceTab && (
-              <section aria-label={intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label} className="crystal-dialog pointer-events-auto mb-3 max-h-[30dvh] overflow-y-auto bg-white/90 p-4 text-sm text-neutral-900 [text-shadow:none]">
+              <section aria-label={intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label} className="mb-3 rounded-xl bg-white/90 p-4 text-sm text-neutral-900 [text-shadow:none]">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <h2 className="font-semibold">{intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label}</h2>
                   <button type="button" className="crystal-chip px-2" aria-label="Zamknij analizę" onClick={() => setIntelligenceTab(null)}>×</button>
@@ -321,7 +348,7 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
                     : <p role="status">Pobieranie danych…</p>}
               </section>
             )}
-            <div className="pointer-events-auto mb-3 flex flex-wrap justify-center gap-2">
+            <div className="mb-3 flex flex-wrap justify-center gap-2">
               <button type="button" className="crystal-chip px-3 py-2 text-sm font-semibold" onClick={() => {
                 setStreetView(null);
                 setOrbitTarget({ ...intelligencePoint, ts: ++orbitSequence.current });
@@ -330,13 +357,10 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
             </div>
           </>
         )}
-        <div className="pointer-events-auto mb-3 flex flex-wrap justify-center gap-2">
-          {suggestions.map((suggestion) => <button key={suggestion} type="button" className="crystal-chip px-3 py-2 text-sm font-medium" onClick={() => chooseSuggestion(suggestion)}>{suggestion}</button>)}
-          {ghost && <button type="button" className="crystal-chip px-3 py-2 text-sm" onClick={() => setText(`${query}${ghost} `)} aria-label={`Uzupełnij: ${ghost}`}>↹ {ghost}</button>}
-        </div>
-        <form onSubmit={submitQuery} className="crystal-dialog pointer-events-auto flex items-center gap-2 p-3">
+          </div>
+        <form onSubmit={submitQuery} className="flex min-h-[80px] flex-col justify-between gap-3 pt-2">
           <div className="relative min-w-0 flex-1 overflow-hidden">
-            <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-2 py-3 text-base" style={{ textShadow: "none" }}>
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-2 py-3 pr-8 text-base" style={{ textShadow: "none" }}>
               <div style={{ transform: `translateX(-${scrollLeft}px)` }}><span className="text-transparent">{query}</span><span className="text-white/55">{ghost}</span></div>
             </div>
             <input ref={inputRef} aria-label="Zapytaj AI o nieruchomość" autoComplete="off" maxLength={1000} value={query} onChange={(event) => { setQuery(event.target.value); setCaretAtEnd(event.target.selectionStart === event.target.value.length); }} onSelect={(event) => setCaretAtEnd(event.currentTarget.selectionStart === event.currentTarget.value.length && event.currentTarget.selectionEnd === event.currentTarget.value.length)} onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)} onKeyDown={(event) => {
@@ -344,11 +368,13 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
                 event.preventDefault();
                 setText(`${query}${ghost} `);
               }
-            }} placeholder="Jak możemy Ci pomóc?" className="relative w-full bg-transparent px-2 py-3 text-base text-white outline-none placeholder:text-white/80" />
+            }} placeholder="Jak możemy Ci pomóc?" className="relative w-full bg-transparent px-2 py-3 pr-8 text-base text-white outline-none placeholder:text-white/80" />
           </div>
-          <button type="submit" disabled={busy || !query.trim()} className="crystal-chip px-5 py-3 font-semibold disabled:opacity-50">{busy ? "…" : "Go"}</button>
+          <button type="submit" disabled={busy || !query.trim()} className="crystal-chip self-end px-5 py-2 font-semibold disabled:opacity-50">{busy ? "…" : "Go"}</button>
         </form>
+        </div>
       </div>
+      )}
     </main>
   );
 }

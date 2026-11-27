@@ -8,7 +8,10 @@ wdrożenia i uruchom aplikację ponownie. W projekcie Google Cloud włącz
 rozliczenia, Maps JavaScript API, Places API (New), Routes API i Geocoding API. Klucz
 przeglądarkowy należy ograniczyć do właściwych domen i wymaganych API.
 Domyślny widok Earth 3D wykorzystuje fotorealistyczną mapę Google Maps 3D
-(kanał beta); przełączniki udostępniają także mapy 2D i warstwę rowerową.
+(kanał beta) i natywne kontrolki Google. Trasy, Street View oraz analiza terenu
+przełączają mapę na silnik 2D z natywnymi kontrolkami, a przelot 360° przywraca
+widok 3D. Dostępne kontrolki zależą od wybranego silnika Google.
+Centralne okno AI można zminimalizować i przywrócić przyciskiem u dołu ekranu.
 Po wybraniu nieruchomości, punktu lub miejsca można uruchomić przelot 360°.
 Widok 3D oraz Street View zależą od dostępności danych Google w danej
 lokalizacji. Korzystanie z tych usług może generować opłaty. Nieruchomości bez
