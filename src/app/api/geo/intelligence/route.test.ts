@@ -22,6 +22,9 @@ test("analizuje niezależne usługi, buforuje wyniki i ponawia błędy", async (
     }
     if (url.includes("pollen.googleapis.com")) return Response.json({ dailyInfo: [{ pollenTypeInfo: [{ displayName: "Trawy", indexInfo: { category: "Niski" } }] }] });
     if (url.includes("weather.googleapis.com")) return Response.json({ temperature: { degrees: 18 }, weatherCondition: { description: { text: "Słonecznie" } } });
+    if (url.includes("timezone/json")) return Response.json({ status: "OK", timeZoneId: "Europe/Warsaw", timeZoneName: "Central European Standard Time" });
+    if (url.includes("geocode/json")) return Response.json({ status: "OK", results: [{ formatted_address: "Rynek, Wrocław, Polska" }] });
+    if (url.includes("aerialview.googleapis.com")) return Response.json({ state: "ACTIVE", uris: { MP4: { landscapeUri: "https://example.test/aerial.mp4" } } });
     throw new Error("Nieoczekiwany adres API");
   };
   const request = (lat: unknown, lng: unknown) => new Request("http://localhost/api/geo/intelligence", {
@@ -42,17 +45,19 @@ test("analizuje niezależne usługi, buforuje wyniki i ponawia błędy", async (
       airQuality: { aqiDisplay: "42", category: "Dobra" },
       pollen: [{ displayName: "Trawy", indexInfo: { category: "Niski" } }],
       weather: { temperature: 18, conditions: "Słonecznie" },
+      timeZone: { id: "Europe/Warsaw", name: "Central European Standard Time" },
+      aerialView: { state: "ACTIVE", videoUrl: "https://example.test/aerial.mp4" },
     });
-    assert.equal(calls.length, 5);
+    assert.equal(calls.length, 8);
     const airCall = calls.find(({ url }) => url.includes("airquality.googleapis.com"));
     assert.equal(airCall?.init?.method, "POST");
     assert.deepEqual(JSON.parse(String(airCall?.init?.body)), { location: { latitude: 51.12341, longitude: 17.12341 } });
 
     await POST(request(51.12342, 17.12342));
-    assert.equal(calls.length, 5);
+    assert.equal(calls.length, 8);
     now += 12 * 60 * 60 * 1000;
     await POST(request(51.12342, 17.12342));
-    assert.equal(calls.length, 10);
+    assert.equal(calls.length, 16);
 
     failAir = true;
     const partial = await (await POST(request(52, 18))).json();
@@ -60,11 +65,11 @@ test("analizuje niezależne usługi, buforuje wyniki i ponawia błędy", async (
     assert.equal(partial.elevation, 125);
     failAir = false;
     assert.equal((await (await POST(request(52, 18))).json()).airQuality.aqiDisplay, "42");
-    assert.equal(calls.length, 20);
+    assert.equal(calls.length, 32);
     noSolar = true;
     assert.equal((await (await POST(request(53, 19))).json()).solar, null);
     await POST(request(53, 19));
-    assert.equal(calls.length, 25);
+    assert.equal(calls.length, 40);
   } finally {
     globalThis.fetch = originalFetch;
     Date.now = originalNow;

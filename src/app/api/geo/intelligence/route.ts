@@ -15,6 +15,8 @@ export type GeoIntelligence = {
     inSeason?: boolean;
   }> | null;
   weather: { temperature: number | null; conditions: string | null } | null;
+  timeZone: { id: string | null; name: string | null } | null;
+  aerialView: { state: string | null; videoUrl: string | null } | null;
 };
 
 const ttl = 12 * 60 * 60 * 1000;
@@ -64,12 +66,32 @@ async function analyze(lat: number, lng: number, key: string): Promise<GeoIntell
       if (!data || (!data.temperature && !data.weatherCondition)) return null;
       return { temperature: data.temperature?.degrees ?? null, conditions: data.weatherCondition?.description?.text ?? null };
     }),
+    lookup<{ timeZoneId?: string; timeZoneName?: string; status?: string }>(
+      "Time Zone", `https://maps.googleapis.com/maps/api/timezone/json?location=${lat},${lng}&timestamp=${Math.floor(Date.now() / 1000)}&key=${apiKey}`,
+    ).then((data) => {
+      if (data && data.status !== "OK") throw new Error(`Time Zone: ${data.status}`);
+      return data ? { id: data.timeZoneId ?? null, name: data.timeZoneName ?? null } : null;
+    }),
+    lookup<{ status?: string; results?: Array<{ formatted_address?: string }> }>(
+      "Aerial View", `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`,
+    ).then(async (geocode) => {
+      if (!geocode || geocode.status === "ZERO_RESULTS") return null;
+      if (geocode.status !== "OK") throw new Error(`Aerial View: ${geocode.status ?? "GEOCODING_FAILED"}`);
+      const address = geocode.results?.[0]?.formatted_address;
+      if (!address) return null;
+      return lookup<{ state?: string; uris?: Record<string, { landscapeUri?: string; portraitUri?: string }> }>(
+        "Aerial View", `https://aerialview.googleapis.com/v1/videos:lookupVideo?address=${encodeURIComponent(address)}&key=${apiKey}`,
+      );
+    }).then((data) => ({
+      state: data?.state ?? null,
+      videoUrl: data?.uris ? Object.values(data.uris).find((uri) => uri.landscapeUri)?.landscapeUri ?? null : null,
+    })),
   ] as const);
 
-  const services = ["Elevation", "Solar", "Air Quality", "Pollen", "Weather"];
+  const services = ["Elevation", "Solar", "Air Quality", "Pollen", "Weather", "Time Zone", "Aerial View"];
   for (const [index, result] of results.entries()) {
     if (result.status === "rejected") {
-      const detail = result.reason instanceof Error && /^(Elevation|Solar|Air Quality|Pollen|Weather): (HTTP \d{3}|[A-Z_]+)$/.test(result.reason.message)
+      const detail = result.reason instanceof Error && /^(Elevation|Solar|Air Quality|Pollen|Weather|Time Zone|Aerial View): (HTTP \d{3}|[A-Z_]+)$/.test(result.reason.message)
         ? result.reason.message : services[index];
       console.error(`Analiza przestrzenna: nie udało się pobrać danych (${detail}).`);
     }
@@ -80,6 +102,8 @@ async function analyze(lat: number, lng: number, key: string): Promise<GeoIntell
     airQuality: results[2].status === "fulfilled" ? results[2].value : null,
     pollen: results[3].status === "fulfilled" ? results[3].value : null,
     weather: results[4].status === "fulfilled" ? results[4].value : null,
+    timeZone: results[5].status === "fulfilled" ? results[5].value : null,
+    aerialView: results[6].status === "fulfilled" ? results[6].value : null,
   };
   if (results.every((result) => result.status === "fulfilled")) {
     cache.set(`${lat.toFixed(4)},${lng.toFixed(4)}`, { expires: Date.now() + ttl, data });

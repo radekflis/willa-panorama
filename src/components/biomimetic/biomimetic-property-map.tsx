@@ -2,6 +2,20 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
+import {
+  AirVent,
+  Bike,
+  Box,
+  Clock3,
+  CloudSun,
+  Flower2,
+  Mountain,
+  Plane,
+  Route as RouteIcon,
+  Sun,
+  Trees,
+  X,
+} from "lucide-react";
 
 export interface PropertyMarkerData {
   id: string;
@@ -24,6 +38,7 @@ export type RouteMode = "DRIVING" | "WALKING" | "BICYCLING" | "TRANSIT";
 export type MapPoint = { lat: number; lng: number };
 export type RouteDestination = MapPoint & { mode: RouteMode };
 export type RouteInfo = { distance: string; duration: string };
+export type IntelligenceLayer = "solar" | "air" | "pollen" | "weather" | "terrain" | "timezone";
 
 interface BiomimeticMapProps {
   properties: PropertyMarkerData[];
@@ -40,11 +55,18 @@ interface BiomimeticMapProps {
   onMapError: (error: string | null) => void;
   onRouteWarnings?: (warnings: string[]) => void;
   streetViewTarget?: MapPoint | null;
+  onStreetViewRequest?: (point: MapPoint) => void;
   onCloseStreetView?: () => void;
   pickLocationMode?: boolean;
   onPickLocation?: (coords: MapPoint) => void;
   terrainRequest?: number;
   orbitTarget?: (MapPoint & { ts: number }) | null;
+  onIntelligenceRequest?: (tab: IntelligenceLayer) => void;
+  activeIntelligenceLayer?: IntelligenceLayer | null;
+  onAerialRequest?: () => void;
+  aerialVideoUrl?: string | null;
+  onCloseAerialVideo?: () => void;
+  onAerialVideoError?: () => void;
 }
 
 const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -65,21 +87,47 @@ export function BiomimeticPropertyMap({
   onMapError,
   onRouteWarnings,
   streetViewTarget,
+  onStreetViewRequest,
   onCloseStreetView,
   pickLocationMode = false,
   onPickLocation,
   terrainRequest,
   orbitTarget,
+  onIntelligenceRequest,
+  activeIntelligenceLayer,
+  onAerialRequest,
+  aerialVideoUrl,
+  onCloseAerialVideo,
+  onAerialVideoError,
 }: BiomimeticMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const container3dRef = useRef<HTMLDivElement>(null);
-  const callbacks = useRef({ onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onRouteWarnings, onMapError, onCloseStreetView, pickLocationMode, onPickLocation });
-  callbacks.current = { onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onRouteWarnings, onMapError, onCloseStreetView, pickLocationMode, onPickLocation };
+  const callbacks = useRef({
+    onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onRouteWarnings, onMapError,
+    onStreetViewRequest, onCloseStreetView, pickLocationMode, onPickLocation, onIntelligenceRequest, onAerialRequest,
+    onRouteStop: (_point: MapPoint) => {},
+  });
+  callbacks.current = {
+    onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onRouteWarnings, onMapError,
+    onStreetViewRequest, onCloseStreetView, pickLocationMode, onPickLocation, onIntelligenceRequest, onAerialRequest,
+    onRouteStop: (point) => { void addRouteStop(point); },
+  };
   const markers2d = useRef(new Map<string, google.maps.Marker>());
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const routePlanner = useRef({ active: false, points: [] as MapPoint[] });
+  const routePlanLines = useRef<google.maps.Polyline[]>([]);
+  const routePlanMarkers = useRef<google.maps.Marker[]>([]);
+  const routePlanRequest = useRef(0);
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [map3d, setMap3d] = useState<google.maps.maps3d.Map3DElement | null>(null);
   const [maps3dLibrary, setMaps3dLibrary] = useState<google.maps.Maps3DLibrary | null>(null);
   const [mapType, setMapType] = useState<"earth3d" | "hybrid" | "roadmap" | "terrain">("earth3d");
+  const [bicyclingEnabled, setBicyclingEnabled] = useState(false);
+  const [rangeEnabled, setRangeEnabled] = useState(false);
+  const [routePlanActive, setRoutePlanActive] = useState(false);
+  const [routeStopCount, setRouteStopCount] = useState(0);
+  const [routePlanInfo, setRoutePlanInfo] = useState<RouteInfo | null>(null);
+  const [routePlanError, setRoutePlanError] = useState<string | null>(null);
   const placeRequest = useRef(0);
   const lastOrbit = useRef<BiomimeticMapProps["orbitTarget"]>(null);
 
@@ -134,6 +182,11 @@ export function BiomimeticPropertyMap({
             if (event.latLng) callbacks.current.onPickLocation?.(event.latLng.toJSON());
             return;
           }
+          if (routePlanner.current.active && event.latLng) {
+            if ("placeId" in event && event.placeId) event.stop();
+            callbacks.current.onRouteStop(event.latLng.toJSON());
+            return;
+          }
           if (!("placeId" in event) || !event.placeId) return;
           event.stop();
           const request = ++placeRequest.current;
@@ -150,6 +203,7 @@ export function BiomimeticPropertyMap({
           }
         });
         setMap(instance);
+        mapRef.current = instance;
       } catch (cause) {
         console.error("Nie udało się załadować Google Maps:", cause);
         if (!cancelled) callbacks.current.onMapError("Nie udało się załadować Google Maps. Sprawdź klucz, dostęp do API i połączenie.");
@@ -162,6 +216,7 @@ export function BiomimeticPropertyMap({
       clickListener?.remove();
       visibleListener?.remove();
       if (instance) google.maps.event.clearInstanceListeners(instance);
+      mapRef.current = null;
     };
   }, []);
 
@@ -191,6 +246,11 @@ export function BiomimeticPropertyMap({
           if (callbacks.current.pickLocationMode) {
             event.preventDefault();
             if (event.position) callbacks.current.onPickLocation?.({ lat: event.position.lat, lng: event.position.lng });
+            return;
+          }
+          if (routePlanner.current.active && event.position) {
+            event.preventDefault();
+            callbacks.current.onRouteStop({ lat: event.position.lat, lng: event.position.lng });
             return;
           }
           if (!("placeId" in event)) return;
@@ -253,6 +313,79 @@ export function BiomimeticPropertyMap({
     setMapType(type);
   }
 
+  function clearRoutePlan() {
+    routePlanRequest.current += 1;
+    routePlanLines.current.forEach((line) => line.setMap(null));
+    routePlanLines.current = [];
+    routePlanMarkers.current.forEach((marker) => {
+      google.maps.event.clearInstanceListeners(marker);
+      marker.setMap(null);
+    });
+    routePlanMarkers.current = [];
+    routePlanner.current.points = [];
+    setRouteStopCount(0);
+    setRoutePlanInfo(null);
+    setRoutePlanError(null);
+  }
+
+  async function addRouteStop(point: MapPoint) {
+    const activeMap = mapRef.current;
+    if (!routePlanner.current.active || !activeMap) return;
+    const points = [...routePlanner.current.points, point];
+    routePlanner.current.points = points;
+    setRouteStopCount(points.length);
+    routePlanMarkers.current.push(new google.maps.Marker({
+      map: activeMap,
+      position: point,
+      label: `${points.length}`,
+      title: `Punkt objazdu ${points.length}`,
+    }));
+    if (points.length < 2) return;
+
+    const requestId = ++routePlanRequest.current;
+    routePlanLines.current.forEach((line) => line.setMap(null));
+    routePlanLines.current = [];
+    try {
+      const { Route } = await importLibrary("routes");
+      const origin = routeOrigin ?? activeMap.getCenter()?.toJSON();
+      if (!origin) throw new Error("Nie można odczytać środka mapy.");
+      const destination = points[points.length - 1];
+      const intermediates = points.slice(0, -1).map((location) => ({ location }));
+      const result = await Route.computeRoutes({
+        origin,
+        destination,
+        intermediates,
+        optimizeWaypointOrder: intermediates.length > 0,
+        travelMode: "DRIVING",
+        fields: ["path", "viewport", "localizedValues", "warnings", "optimizedIntermediateWaypointIndices"],
+        language: "pl",
+      });
+      if (requestId !== routePlanRequest.current) return;
+      const selectedRoute = result.routes?.[0];
+      if (!selectedRoute) throw new Error("Nie znaleziono trasy objazdu.");
+      routePlanLines.current = selectedRoute.createPolylines();
+      routePlanLines.current.forEach((line) => line.setMap(mapRef.current));
+      if (selectedRoute.viewport) activeMap.fitBounds(selectedRoute.viewport, 64);
+      callbacks.current.onRouteWarnings?.(selectedRoute.warnings ?? []);
+      callbacks.current.onRouteInfo?.({
+        distance: selectedRoute.localizedValues?.distance ?? "—",
+        duration: selectedRoute.localizedValues?.duration ?? "—",
+      });
+      setRoutePlanInfo({
+        distance: selectedRoute.localizedValues?.distance ?? "—",
+        duration: selectedRoute.localizedValues?.duration ?? "—",
+      });
+      setRoutePlanError(null);
+    } catch (cause) {
+      console.error("Nie udało się zoptymalizować objazdu:", cause);
+      if (requestId === routePlanRequest.current) {
+        const message = "Nie udało się zoptymalizować objazdu. Sprawdź dostęp do Routes API.";
+        callbacks.current.onRouteError?.(message);
+        setRoutePlanError(message);
+      }
+    }
+  }
+
   useEffect(() => {
     if (!map3d || !maps3dLibrary) return;
     const markers = properties.map((property) => {
@@ -297,6 +430,41 @@ export function BiomimeticPropertyMap({
     if (!map || mapType === "earth3d") return;
     map.setMapTypeId(mapType);
   }, [map, mapType]);
+
+  useEffect(() => {
+    if (!map || !bicyclingEnabled) return;
+    let cancelled = false;
+    let layer: google.maps.BicyclingLayer | null = null;
+    void importLibrary("maps").then(({ BicyclingLayer }) => {
+      if (cancelled) return;
+      layer = new BicyclingLayer();
+      layer.setMap(map);
+    }).catch((cause) => {
+      console.error("Nie udało się włączyć warstwy rowerowej:", cause);
+      callbacks.current.onMapError("Nie udało się włączyć warstwy rowerowej Google Maps.");
+      setBicyclingEnabled(false);
+    });
+    return () => {
+      cancelled = true;
+      layer?.setMap(null);
+    };
+  }, [map, bicyclingEnabled]);
+
+  useEffect(() => {
+    if (!map || !rangeEnabled) return;
+    const circle = new google.maps.Circle({
+      map,
+      center: routeOrigin ?? map.getCenter()?.toJSON(),
+      radius: 10_000,
+      clickable: false,
+      fillColor: "#1a73e8",
+      fillOpacity: 0.12,
+      strokeColor: "#1a73e8",
+      strokeOpacity: 0.8,
+      strokeWeight: 2,
+    });
+    return () => circle.setMap(null);
+  }, [map, rangeEnabled, routeOrigin?.lat, routeOrigin?.lng]);
 
   useEffect(() => {
     if (terrainRequest) changeMapType("terrain");
@@ -446,6 +614,59 @@ export function BiomimeticPropertyMap({
     <div className="relative h-full w-full">
       <div ref={containerRef} className={mapType === "earth3d" ? "hidden h-full w-full" : "h-full w-full"} aria-label="Interaktywna mapa Google" />
       <div ref={container3dRef} className={mapType === "earth3d" ? "h-full w-full" : "hidden h-full w-full"} aria-label="Interaktywna mapa Google 3D" />
+      {aerialVideoUrl && (
+        <div className="absolute inset-4 z-20 overflow-hidden rounded-xl border border-white/30 bg-black shadow-xl">
+          <video className="h-full w-full object-cover" src={aerialVideoUrl} autoPlay controls muted playsInline onError={() => {
+            if (onAerialVideoError) onAerialVideoError();
+            else onCloseAerialVideo?.();
+          }} />
+          <button type="button" aria-label="Zamknij przelot" className="absolute right-2 top-2 rounded-full bg-white/95 p-1.5 text-stone-800 shadow-md" onClick={onCloseAerialVideo}><X className="h-[13px] w-[13px]" /></button>
+        </div>
+      )}
+      {(routePlanInfo || routePlanError) && (
+        <div role={routePlanError ? "alert" : "status"} className="absolute bottom-24 right-3 z-10 max-w-[min(360px,calc(100%-1.5rem))] rounded-lg border border-black/10 bg-white/95 px-3 py-2 text-xs text-stone-800 shadow-md">
+          {routePlanError ?? `Objazd: ${routePlanInfo?.distance} · ${routePlanInfo?.duration}`}
+        </div>
+      )}
+      <div aria-label="Warstwy Google Maps" className="absolute bottom-12 left-3 right-3 z-10 flex w-fit max-w-[calc(100%-1.5rem)] gap-1.5 overflow-x-auto rounded-lg">
+        <button type="button" aria-pressed={mapType === "earth3d"} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${mapType === "earth3d" ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => changeMapType(mapType === "earth3d" ? "hybrid" : "earth3d")}><Box className="h-[13px] w-[13px]" />3D</button>
+        <button type="button" aria-pressed={bicyclingEnabled} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${bicyclingEnabled ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => { if (mapType === "earth3d") changeMapType("hybrid"); setBicyclingEnabled((enabled) => !enabled); }}><Bike className="h-[13px] w-[13px]" />Rower</button>
+        <button type="button" aria-pressed={Boolean(streetViewTarget)} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${streetViewTarget ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
+          if (streetViewTarget) onCloseStreetView?.();
+          else {
+            const center = routeOrigin ?? map?.getCenter()?.toJSON();
+            if (center) onStreetViewRequest?.(center);
+          }
+        }}><Trees className="h-[13px] w-[13px]" />Street View</button>
+        <button type="button" aria-pressed={rangeEnabled} title="Przybliżony zasięg 15 min — okrąg 10 km, gdy brak poligonu izochrony" className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${rangeEnabled ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => setRangeEnabled((enabled) => !enabled)}><Mountain className="h-[13px] w-[13px]" />15 min</button>
+        <button type="button" aria-pressed={routePlanActive} title={routePlanActive ? `Klikaj punkty na mapie (${routeStopCount}); ponownie kliknij, aby zakończyć` : "Kliknij, aby dodać punkty zoptymalizowanej trasy objazdu"} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${routePlanActive ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
+          if (routePlanActive) {
+            routePlanner.current.active = false;
+            setRoutePlanActive(false);
+          } else {
+            clearRoutePlan();
+            routePlanner.current.active = true;
+            setRoutePlanActive(true);
+            changeMapType("hybrid");
+            callbacks.current.onRouteError?.(null);
+            callbacks.current.onRouteInfo?.(null);
+          }
+        }}><RouteIcon className="h-[13px] w-[13px]" />Trasy{routeStopCount ? ` ${routeStopCount}` : ""}</button>
+        <button type="button" className="flex shrink-0 items-center gap-1.5 rounded-lg border border-black/10 bg-white/95 px-2.5 py-1.5 text-[11px] font-medium text-stone-800 shadow-md hover:bg-stone-50" title="Odtwórz widok Aerial View lub orbitę 3D" onClick={() => onAerialRequest?.()}><Plane className="h-[13px] w-[13px]" />Przelot</button>
+        {([
+          ["solar", "Słońce", Sun],
+          ["air", "Powietrze", AirVent],
+          ["pollen", "Pyłki", Flower2],
+          ["weather", "Pogoda", CloudSun],
+          ["terrain", "Teren", Mountain],
+          ["timezone", "Czas", Clock3],
+        ] as const).map(([id, label, Icon]) => (
+          <button key={id} type="button" aria-pressed={activeIntelligenceLayer === id} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${activeIntelligenceLayer === id ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
+            if (id === "terrain") changeMapType("terrain");
+            callbacks.current.onIntelligenceRequest?.(id);
+          }}><Icon className="h-[13px] w-[13px]" />{label}</button>
+        ))}
+      </div>
     </div>
   );
 }

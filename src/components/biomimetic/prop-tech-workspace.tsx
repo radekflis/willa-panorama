@@ -2,6 +2,7 @@
 
 import React, { useMemo, useRef, useState } from "react";
 import { importLibrary } from "@googlemaps/js-api-loader";
+import { AirVent, Clock3, CloudSun, Flower2, Mountain, Sun } from "lucide-react";
 import {
   BiomimeticPropertyMap,
   type MapCameraTarget,
@@ -9,6 +10,7 @@ import {
   type RouteDestination,
   type RouteInfo,
   type RouteMode,
+  type IntelligenceLayer,
 } from "./biomimetic-property-map";
 import type { PropertyDetailData } from "./biomimetic-property-detail";
 import { predictSuffix } from "./crystal-prediction";
@@ -26,13 +28,16 @@ const TYPES = ["dom", "mieszkanie", "działkę", "apartament"];
 const LOCATIONS = ["w województwie pomorskim", "w dolnośląskim", "w mazowieckim", "nad jeziorem", "w górach"];
 
 type Intent = "sell" | "buy" | "area" | "unknown";
-type IntelligenceTab = "solar" | "air" | "terrain";
+type IntelligenceTab = IntelligenceLayer;
 type IntelligenceState = { key: string; status: "loading" | "error" } | { key: string; status: "ready"; data: GeoIntelligence };
 
-const intelligenceTabs: Array<{ id: IntelligenceTab; label: string }> = [
-  { id: "solar", label: "Słońce i Dach" },
-  { id: "air", label: "Powietrze i Alergeny" },
-  { id: "terrain", label: "Teren i Wysokość" },
+const intelligenceTabs: Array<{ id: IntelligenceTab; label: string; Icon: typeof Sun }> = [
+  { id: "solar", label: "Słońce", Icon: Sun },
+  { id: "air", label: "Powietrze", Icon: AirVent },
+  { id: "pollen", label: "Pyłki", Icon: Flower2 },
+  { id: "weather", label: "Pogoda", Icon: CloudSun },
+  { id: "terrain", label: "Teren", Icon: Mountain },
+  { id: "timezone", label: "Czas", Icon: Clock3 },
 ];
 
 function IntelligenceDetails({ tab, data }: { tab: IntelligenceTab; data: GeoIntelligence }) {
@@ -46,13 +51,15 @@ function IntelligenceDetails({ tab, data }: { tab: IntelligenceTab; data: GeoInt
     </div> : <p>Brak danych o dachu dla tego miejsca.</p>;
   }
   if (tab === "terrain") return <p>Wysokość n.p.m.: {number(data.elevation, "m")}</p>;
-  return <div className="space-y-1">
-    <p>Jakość powietrza: {data.airQuality ? [data.airQuality.aqiDisplay, data.airQuality.category].filter(Boolean).join(" · ") || "Brak danych" : "Brak danych"}</p>
-    <p>Pogoda: {data.weather ? [data.weather.temperature == null ? null : number(data.weather.temperature, "°C"), data.weather.conditions].filter(Boolean).join(" · ") || "Brak danych" : "Brak danych"}</p>
-    <p>Pylenie: {!data.pollen?.length ? "Brak danych" : data.pollen.map((item) =>
+  if (tab === "air") return <p>Indeks AQI: {data.airQuality ? [data.airQuality.aqiDisplay, data.airQuality.category].filter(Boolean).join(" · ") || "Brak danych" : "Brak danych"}</p>;
+  if (tab === "weather") return <p>{data.weather ? [data.weather.temperature == null ? null : number(data.weather.temperature, "°C"), data.weather.conditions].filter(Boolean).join(" · ") || "Brak danych" : "Brak danych"}</p>;
+  if (tab === "timezone") {
+    const timeZone = data.timeZone?.id;
+    return <p>{data.timeZone?.name ?? timeZone ?? "Brak danych"}{timeZone ? ` · ${new Intl.DateTimeFormat("pl-PL", { timeZone, dateStyle: "short", timeStyle: "short" }).format(new Date())}` : ""}</p>;
+  }
+  return <p>Pylenie: {!data.pollen?.length ? "Brak danych" : data.pollen.map((item) =>
       `${item.displayName ?? item.code ?? "Pyłki"}: ${item.indexInfo?.category ?? (item.indexInfo?.value != null ? item.indexInfo.value : item.inSeason === false ? "poza sezonem" : "brak danych")}`,
-    ).join("; ")}</p>
-  </div>;
+    ).join("; ")}</p>;
 }
 
 function localIntent(text: string): Intent {
@@ -118,6 +125,9 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   const [intelligence, setIntelligence] = useState<IntelligenceState | null>(null);
   const [terrainRequest, setTerrainRequest] = useState(0);
   const intelligenceRequest = useRef(0);
+  const intelligenceCache = useRef(new Map<string, GeoIntelligence>());
+  const intelligencePending = useRef(new Map<string, Promise<GeoIntelligence>>());
+  const [aerialVideoUrl, setAerialVideoUrl] = useState<string | null>(null);
 
   const ghost = caretAtEnd ? predictSuffix(query) : "";
   const typeMatch = query.match(/^(Sprzedaję|Kupuję)\s+(dom|mieszkanie|działkę|apartament)(?:\s|$)/i);
@@ -213,30 +223,71 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
     : properties, [location, properties, selectedId]);
   const placeLocation = place?.location?.toJSON();
   const intelligencePoint = sellerOpen ? location : placeLocation ?? location;
-  const intelligenceKey = intelligencePoint ? `${intelligencePoint.lat},${intelligencePoint.lng}` : null;
+  const intelligenceKey = intelligencePoint ? `${intelligencePoint.lat.toFixed(4)},${intelligencePoint.lng.toFixed(4)}` : null;
   const activeIntelligenceTab = intelligenceTab?.key === intelligenceKey ? intelligenceTab.tab : null;
   const currentIntelligence = intelligence?.key === intelligenceKey ? intelligence : null;
+
+  async function fetchIntelligence(point: MapPoint, key: string): Promise<GeoIntelligence> {
+    const cachedData = intelligenceCache.current.get(key);
+    if (cachedData) return cachedData;
+    const existingRequest = intelligencePending.current.get(key);
+    if (existingRequest) return existingRequest;
+    const pendingRequest = (async () => {
+      const response = await fetch("/api/geo/intelligence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(point),
+      });
+      if (!response.ok) throw new Error(`Analiza przestrzenna: HTTP ${response.status}`);
+      return response.json() as Promise<GeoIntelligence>;
+    })();
+    intelligencePending.current.set(key, pendingRequest);
+    try {
+      const data = await pendingRequest;
+      intelligenceCache.current.set(key, data);
+      return data;
+    } finally {
+      intelligencePending.current.delete(key);
+    }
+  }
 
   async function openIntelligence(tab: IntelligenceTab) {
     if (!intelligencePoint || !intelligenceKey) return;
     setIntelligenceTab({ key: intelligenceKey, tab });
     if (tab === "terrain") setTerrainRequest((value) => value + 1);
-    if (currentIntelligence && currentIntelligence.status !== "error") return;
+    if (currentIntelligence?.status === "loading") return;
     const requestId = ++intelligenceRequest.current;
+    const cachedData = intelligenceCache.current.get(intelligenceKey);
+    if (cachedData) {
+      setIntelligence({ key: intelligenceKey, status: "ready", data: cachedData });
+      return;
+    }
     setIntelligence({ key: intelligenceKey, status: "loading" });
     try {
-      const response = await fetch("/api/geo/intelligence", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(intelligencePoint),
-      });
-      if (!response.ok) throw new Error(`Analiza przestrzenna: HTTP ${response.status}`);
-      const data: GeoIntelligence = await response.json();
+      const data = await fetchIntelligence(intelligencePoint, intelligenceKey);
       if (requestId === intelligenceRequest.current) setIntelligence({ key: intelligenceKey, status: "ready", data });
     } catch (error) {
       console.error("Nie udało się pobrać analizy przestrzennej:", error);
       if (requestId === intelligenceRequest.current) setIntelligence({ key: intelligenceKey, status: "error" });
     }
+  }
+
+  async function openAerialView() {
+    if (!intelligencePoint || !intelligenceKey) return;
+    setStreetView(null);
+    try {
+      const data = await fetchIntelligence(intelligencePoint, intelligenceKey);
+      if (data.aerialView?.videoUrl) setAerialVideoUrl(data.aerialView.videoUrl);
+      else setOrbitTarget({ ...intelligencePoint, ts: ++orbitSequence.current });
+    } catch (error) {
+      console.error("Nie udało się sprawdzić dostępności Aerial View:", error);
+      setOrbitTarget({ ...intelligencePoint, ts: ++orbitSequence.current });
+    }
+  }
+
+  function fallbackToOrbit() {
+    setAerialVideoUrl(null);
+    if (intelligencePoint) setOrbitTarget({ ...intelligencePoint, ts: ++orbitSequence.current });
   }
 
   return (
@@ -269,9 +320,28 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
         onMapError={setMapError}
         onRouteWarnings={setRouteWarnings}
         streetViewTarget={streetView}
+        onStreetViewRequest={setStreetView}
         onCloseStreetView={() => setStreetView(null)}
         terrainRequest={terrainRequest}
+        onIntelligenceRequest={(tab) => void openIntelligence(tab)}
+        activeIntelligenceLayer={activeIntelligenceTab}
+        onAerialRequest={() => void openAerialView()}
+        aerialVideoUrl={aerialVideoUrl}
+        onCloseAerialVideo={() => setAerialVideoUrl(null)}
+        onAerialVideoError={fallbackToOrbit}
       />
+
+      {activeIntelligenceTab && intelligencePoint && (
+        <section aria-label={intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label} className="fixed bottom-[104px] left-3 z-20 max-h-[28dvh] w-[min(360px,calc(100vw-1.5rem))] overflow-y-auto rounded-lg border border-black/10 bg-white/95 p-3 text-xs text-stone-800 shadow-md [text-shadow:none]">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h2 className="text-[13px] font-semibold">{intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label}</h2>
+            <button type="button" className="rounded px-2 text-base leading-none hover:bg-stone-100" aria-label="Zamknij analizę" onClick={() => setIntelligenceTab(null)}>×</button>
+          </div>
+          {currentIntelligence?.status === "ready" ? <IntelligenceDetails tab={activeIntelligenceTab} data={currentIntelligence.data} />
+            : currentIntelligence?.status === "error" ? <p role="alert">Nie udało się pobrać analizy. Kliknij ponownie, aby spróbować.</p>
+              : <p role="status">Pobieranie danych…</p>}
+        </section>
+      )}
 
       {minimized ? (
         <div className="pointer-events-none fixed bottom-6 left-1/2 z-20 -translate-x-1/2">
@@ -281,12 +351,12 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
           }} className="crystal-chip pointer-events-auto px-4 py-2 text-sm font-semibold" aria-label="Przywróć okno AI">AI +</button>
         </div>
       ) : (
-      <div className="pointer-events-none fixed left-1/2 top-1/2 z-20 w-[90vw] max-w-[460px] -translate-x-1/2 -translate-y-1/2">
+      <div className="pointer-events-none fixed left-1/2 top-1/2 z-20 w-[86vw] max-w-[345px] -translate-x-1/2 -translate-y-1/2">
         <div className="pointer-events-none absolute bottom-full left-0 mb-3 flex max-h-[25dvh] w-full flex-wrap justify-center gap-2 overflow-y-auto">
-          {suggestions.map((suggestion) => <button key={suggestion} type="button" className="crystal-chip pointer-events-auto px-3 py-2 text-sm font-medium" onClick={() => chooseSuggestion(suggestion)}>{suggestion}</button>)}
-          {ghost && <button type="button" className="crystal-chip pointer-events-auto px-3 py-2 text-sm" onClick={() => setText(`${query}${ghost} `)} aria-label={`Uzupełnij: ${ghost}`}>↹ {ghost}</button>}
+          {suggestions.map((suggestion) => <button key={suggestion} type="button" className="crystal-chip pointer-events-auto px-2.5 py-1 text-[11px] font-medium" onClick={() => chooseSuggestion(suggestion)}>{suggestion}</button>)}
+          {ghost && <button type="button" className="crystal-chip pointer-events-auto px-2.5 py-1 text-[11px]" onClick={() => setText(`${query}${ghost} `)} aria-label={`Uzupełnij: ${ghost}`}>↹ {ghost}</button>}
         </div>
-        <div className="crystal-dialog pointer-events-auto relative flex min-h-[120px] max-h-[60dvh] flex-col gap-3 p-5">
+        <div className="crystal-dialog pointer-events-auto relative flex min-h-[90px] max-h-[60dvh] flex-col gap-2 p-3.5">
           <button type="button" onClick={() => {
             setScrollLeft(0);
             setMinimized(true);
@@ -335,32 +405,10 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
         {mapError && <p role="alert" className="mb-3 pr-8">{mapError} <button type="button" className="underline" onClick={() => setMapError(null)}>Zamknij</button></p>}
         {message && <p role="status" className="mb-3 pr-8">{message} <button type="button" className="underline" onClick={() => setMessage(null)}>Zamknij</button></p>}
         {routeWarnings.map((warning) => <p key={warning} className="mb-2 text-xs">{warning}</p>)}
-        {intelligencePoint && (
-          <>
-            {activeIntelligenceTab && (
-              <section aria-label={intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label} className="mb-3 rounded-xl bg-white/90 p-4 text-sm text-neutral-900 [text-shadow:none]">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <h2 className="font-semibold">{intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label}</h2>
-                  <button type="button" className="crystal-chip px-2" aria-label="Zamknij analizę" onClick={() => setIntelligenceTab(null)}>×</button>
-                </div>
-                {currentIntelligence?.status === "ready" ? <IntelligenceDetails tab={activeIntelligenceTab} data={currentIntelligence.data} />
-                  : currentIntelligence?.status === "error" ? <p role="alert">Nie udało się pobrać analizy. Kliknij ponownie, aby spróbować.</p>
-                    : <p role="status">Pobieranie danych…</p>}
-              </section>
-            )}
-            <div className="mb-3 flex flex-wrap justify-center gap-2">
-              <button type="button" className="crystal-chip px-3 py-2 text-sm font-semibold" onClick={() => {
-                setStreetView(null);
-                setOrbitTarget({ ...intelligencePoint, ts: ++orbitSequence.current });
-              }}>Przelot 360°</button>
-              {intelligenceTabs.map(({ id, label }) => <button key={id} type="button" aria-pressed={activeIntelligenceTab === id} className={`crystal-chip px-3 py-2 text-sm font-semibold ${activeIntelligenceTab === id ? "ring-2 ring-neutral-700" : ""}`} onClick={() => void openIntelligence(id)}>{label}</button>)}
-            </div>
-          </>
-        )}
-          </div>
-        <form onSubmit={submitQuery} className="flex min-h-[80px] flex-col justify-between gap-3 pt-2">
+        </div>
+        <form onSubmit={submitQuery} className="flex min-h-[80px] flex-col justify-between gap-2 pt-2">
           <div className="relative min-w-0 flex-1 overflow-hidden">
-            <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-2 py-3 pr-8 text-base" style={{ textShadow: "none" }}>
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-2 py-2 pr-8 text-xs" style={{ textShadow: "none" }}>
               <div style={{ transform: `translateX(-${scrollLeft}px)` }}><span className="text-transparent">{query}</span><span className="text-white/55">{ghost}</span></div>
             </div>
             <input ref={inputRef} aria-label="Zapytaj AI o nieruchomość" autoComplete="off" maxLength={1000} value={query} onChange={(event) => { setQuery(event.target.value); setCaretAtEnd(event.target.selectionStart === event.target.value.length); }} onSelect={(event) => setCaretAtEnd(event.currentTarget.selectionStart === event.currentTarget.value.length && event.currentTarget.selectionEnd === event.currentTarget.value.length)} onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)} onKeyDown={(event) => {
@@ -368,9 +416,9 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
                 event.preventDefault();
                 setText(`${query}${ghost} `);
               }
-            }} placeholder="Jak możemy Ci pomóc?" className="relative w-full bg-transparent px-2 py-3 pr-8 text-base text-white outline-none placeholder:text-white/80" />
+            }} placeholder="Jak możemy Ci pomóc?" className="relative w-full bg-transparent px-2 py-2 pr-8 text-xs text-white outline-none placeholder:text-white/80" />
           </div>
-          <button type="submit" disabled={busy || !query.trim()} className="crystal-chip self-end px-5 py-2 font-semibold disabled:opacity-50">{busy ? "…" : "Go"}</button>
+          <button type="submit" disabled={busy || !query.trim()} className="crystal-chip self-end px-3 py-1.5 text-xs font-semibold disabled:opacity-50">{busy ? "…" : "Go"}</button>
         </form>
         </div>
       </div>
