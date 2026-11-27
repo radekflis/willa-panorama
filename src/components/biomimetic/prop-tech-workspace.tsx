@@ -348,23 +348,28 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
           {currentIntelligence?.status === "ready" ? <IntelligenceDetails tab={activeIntelligenceTab} data={currentIntelligence.data} />
             : currentIntelligence?.status === "error" ? <p role="alert">{currentIntelligence.message}</p>
               : <p role="status">Pobieranie danych z Google API...</p>}
-          {(activeIntelligenceTab === "air" || activeIntelligenceTab === "pollen") && (
+          {activeIntelligenceTab === "weather" && mapZoom > 7 && (
+            <p className="mt-2 text-white/75">Oddal mapę do zoomu 7 lub mniej, aby zobaczyć radar RainViewer.</p>
+          )}
+          {activeIntelligenceTab === "air" && (
+            <p className="mt-2 text-white/75">
+              Nakładka NASA to obraz satelitarny MODIS w kolorach naturalnych, a nie mapa jakości powietrza.
+              {mapZoom > 9 && " Oddal mapę do zoomu 9 lub mniej, aby ją zobaczyć."}
+            </p>
+          )}
+          {activeIntelligenceTab === "pollen" && (
             <div className="mt-3 border-t border-white/20 pt-2">
-              {activeIntelligenceTab === "pollen" && (
-                <div className="mb-2 flex gap-1" aria-label="Rodzaj pyłków">
-                  {([["TREE_UPI", "Drzewa"], ["GRASS_UPI", "Trawy"], ["WEED_UPI", "Chwasty"]] as const).map(([type, label]) => (
-                    <button key={type} type="button" aria-pressed={pollenType === type} onClick={() => setPollenType(type)}
-                      className={`rounded px-2 py-1 ${pollenType === type ? "bg-white text-slate-950" : "bg-white/15 hover:bg-white/25"}`}>{label}</button>
-                  ))}
-                </div>
-              )}
-              <p>{activeIntelligenceTab === "air" ? "Uniwersalny indeks jakości powietrza (UAQI)" : "Uniwersalny indeks pyłków (UPI)"}</p>
-              <div className="my-1 h-2 rounded-full" style={{ background: activeIntelligenceTab === "air"
-                ? "linear-gradient(to right, #75008d, #b40c22, #fa5800, #fdf90c, #05b1a0, rgba(5,177,162,0.05))"
-                : "linear-gradient(to right, #eeeeee, #008f55, #77b855, #f5df39, #ef8e29, #d32f2f)" }} />
+              <div className="mb-2 flex gap-1" aria-label="Rodzaj pyłków">
+                {([["TREE_UPI", "Drzewa"], ["GRASS_UPI", "Trawy"], ["WEED_UPI", "Chwasty"]] as const).map(([type, label]) => (
+                  <button key={type} type="button" aria-pressed={pollenType === type} onClick={() => setPollenType(type)}
+                    className={`rounded px-2 py-1 ${pollenType === type ? "bg-white text-slate-950" : "bg-white/15 hover:bg-white/25"}`}>{label}</button>
+                ))}
+              </div>
+              <p>Uniwersalny indeks pyłków (UPI)</p>
+              <div className="my-1 h-2 rounded-full" style={{ background: "linear-gradient(to right, #eeeeee, #008f55, #77b855, #f5df39, #ef8e29, #d32f2f)" }} />
               <div className="flex justify-between text-[10px] text-white/80">
-                <span>{activeIntelligenceTab === "air" ? "0 · zła jakość" : "0 · brak"}</span>
-                <span>{activeIntelligenceTab === "air" ? "100 · doskonała" : "5 · bardzo wysokie"}</span>
+                <span>0 · brak</span>
+                <span>5 · bardzo wysokie</span>
               </div>
               {mapZoom > 16 && <p className="mt-2 text-white/75">Oddal lekko mapę (zoom ≤ 16), aby zobaczyć pełną warstwę kafelków</p>}
               <p className="mt-2 text-white/70">Kafelki Google zależą od dostępności danych oraz dostępu klucza do API.</p>

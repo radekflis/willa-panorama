@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
+import { FuturisticMapLayers, type ActiveLayerType } from "../../lib/futuristicLayers";
 import {
   AirVent,
   Bike,
@@ -108,21 +109,24 @@ export function BiomimeticPropertyMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const callbacks = useRef({
     onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onRouteWarnings, onMapError,
-    onStreetViewRequest, onCloseStreetView, pickLocationMode, onPickLocation, onIntelligenceRequest, onZoomChange,
+    onStreetViewRequest, onCloseStreetView, pickLocationMode, onPickLocation, onIntelligenceRequest, onVisualLayerChange, onZoomChange,
     onRouteStop: (_point: MapPoint) => {},
   });
   callbacks.current = {
     onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onRouteWarnings, onMapError,
-    onStreetViewRequest, onCloseStreetView, pickLocationMode, onPickLocation, onIntelligenceRequest, onZoomChange,
+    onStreetViewRequest, onCloseStreetView, pickLocationMode, onPickLocation, onIntelligenceRequest, onVisualLayerChange, onZoomChange,
     onRouteStop: (point) => { void addRouteStop(point); },
   };
   const markers2d = useRef(new Map<string, google.maps.Marker>());
   const mapRef = useRef<google.maps.Map | null>(null);
+  const layersRef = useRef<FuturisticMapLayers | null>(null);
   const routePlanner = useRef({ active: false, points: [] as MapPoint[] });
   const routePlanLines = useRef<google.maps.Polyline[]>([]);
   const routePlanMarkers = useRef<google.maps.Marker[]>([]);
   const routePlanRequest = useRef(0);
   const [map2d, setMap2d] = useState<google.maps.Map | null>(null);
+  const [activeLayer, setActiveLayer] = useState<ActiveLayerType>("none");
+  const [radarTime, setRadarTime] = useState("");
   const [orbitActive, setOrbitActive] = useState(false);
   const [orbitRequest, setOrbitRequest] = useState<(MapPoint & { ts: number }) | null>(null);
   const [localVisualLayer, setLocalVisualLayer] = useState<VisualLayer>(null);
@@ -180,6 +184,7 @@ export function BiomimeticPropertyMap({
           fullscreenControl: true,
           scaleControl: true,
         });
+        layersRef.current = new FuturisticMapLayers(instance);
         callbacks.current.onZoomChange?.(instance.getZoom() ?? 14);
         zoomListener = instance.addListener("zoom_changed", () => {
           const zoom = instance?.getZoom();
@@ -236,6 +241,8 @@ export function BiomimeticPropertyMap({
       visibleListener?.remove();
       renderingListener?.remove();
       zoomListener?.remove();
+      layersRef.current?.clearAll();
+      layersRef.current = null;
       if (instance) google.maps.event.clearInstanceListeners(instance);
       mapRef.current = null;
       setMap2d(null);
@@ -325,19 +332,42 @@ export function BiomimeticPropertyMap({
 
   useEffect(() => {
     if (!map2d) return;
-    map2d.overlayMapTypes.clear();
-    if ((visualLayer !== "air" && visualLayer !== "pollen") || !apiKey) return;
-    const service = visualLayer === "air" ? "airquality" : "pollen";
-    const type = visualLayer === "air" ? "UAQI_INDIGO_PERSIAN" : pollenType;
+    if (visualLayer !== "pollen" || !apiKey) return;
     const tiles = new google.maps.ImageMapType({
       tileSize: new google.maps.Size(256, 256),
       opacity: 0.65,
       maxZoom: 16,
-      getTileUrl: (coord, zoom) => heatmapTileUrl(service, type, coord, zoom, apiKey),
+      getTileUrl: (coord, zoom) => heatmapTileUrl("pollen", pollenType, coord, zoom, apiKey),
     });
     map2d.overlayMapTypes.push(tiles);
-    return () => { map2d.overlayMapTypes.clear(); };
+    return () => {
+      const index = map2d.overlayMapTypes.getArray().indexOf(tiles);
+      if (index !== -1) map2d.overlayMapTypes.removeAt(index);
+    };
   }, [map2d, visualLayer, pollenType]);
+
+  useEffect(() => {
+    setRadarTime("");
+    setActiveLayer("none");
+    const layers = layersRef.current;
+    if (!map2d || !layers || (visualLayer !== "weather" && visualLayer !== "terrain" && visualLayer !== "air")) return;
+    let cancelled = false;
+    setActiveLayer(visualLayer);
+    void layers.toggleLayer(visualLayer, setRadarTime).then((active) => {
+      if (!cancelled) setActiveLayer(active);
+    }).catch((cause) => {
+      if (cancelled) return;
+      console.error("Nie udało się włączyć warstwy mapy:", cause);
+      callbacks.current.onMapError("Nie udało się włączyć warstwy mapy. Sprawdź połączenie i spróbuj ponownie.");
+      setActiveLayer("none");
+      setLocalVisualLayer(null);
+      callbacks.current.onVisualLayerChange?.(null);
+    });
+    return () => {
+      cancelled = true;
+      layers.clearAll();
+    };
+  }, [map2d, visualLayer]);
 
   useEffect(() => {
     if (!map2d || visualLayer !== "range") return;
@@ -565,14 +595,24 @@ export function BiomimeticPropertyMap({
           ["weather", "Pogoda", CloudSun],
           ["terrain", "Teren / m n.p.m.", Mountain],
           ["timezone", "Czas", Clock3],
-        ] as const).map(([id, label, Icon]) => (
-          <button key={id} type="button" aria-pressed={visualLayer === id} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${visualLayer === id ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
+        ] as const).map(([id, label, Icon]) => {
+          const isActive = id === "weather" || id === "terrain" || id === "air"
+            ? activeLayer === id && visualLayer === id
+            : visualLayer === id;
+          return <button key={id} type="button" aria-pressed={isActive} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${isActive ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
             const next = visualLayer === id ? null : id;
             activateVisualLayer(next);
             if (next) callbacks.current.onIntelligenceRequest?.(id, getCurrentMapPoint());
-          }}><Icon className="h-[13px] w-[13px]" />{label}</button>
-        ))}
+          }}><Icon className="h-[13px] w-[13px]" />{label}{id === "weather" && isActive && radarTime ? ` · ${radarTime}` : ""}</button>;
+        })}
       </div>
+      {(visualLayer === "weather" || visualLayer === "terrain" || visualLayer === "air") && (
+        <div className="absolute bottom-1 left-3 z-10 rounded bg-white/90 px-1.5 text-[10px] text-stone-800">
+          {visualLayer === "weather" ? <>Radar: <a href="https://www.rainviewer.com/" target="_blank" rel="noreferrer">RainViewer</a></>
+            : visualLayer === "terrain" ? <>Dane: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>, SRTM; mapa: © <a href="https://opentopomap.org/" target="_blank" rel="noreferrer">OpenTopoMap</a> (CC-BY-SA)</>
+              : <>Obraz: <a href="https://earthdata.nasa.gov/data/tools/gibs" target="_blank" rel="noreferrer">NASA GIBS</a></>}
+        </div>
+      )}
     </div>
   );
 }
