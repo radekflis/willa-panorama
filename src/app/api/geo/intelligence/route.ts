@@ -6,6 +6,7 @@ export type GeoIntelligence = {
     maxSunshineHoursPerYear: number | null;
     areaMeters2: number | null;
     maxArrayPanelsCount: number | null;
+    maxPowerKw: number | null;
   } | null;
   airQuality: { aqiDisplay: string | null; category: string | null } | null;
   pollen: Array<{
@@ -40,14 +41,17 @@ async function analyze(lat: number, lng: number, key: string): Promise<GeoIntell
       if (data && data.status !== "OK" && data.status !== "ZERO_RESULTS") throw new Error(`Elevation: ${data.status}`);
       return data?.results?.[0]?.elevation ?? null;
     }),
-    lookup<{ solarPotential?: { maxSunshineHoursPerYear?: number; wholeRoofStats?: { areaMeters2?: number }; maxArrayPanelsCount?: number } }>(
-      "Solar", `https://solar.googleapis.com/v1/buildingInsights:findClosest?${location}&requiredQuality=MEDIUM&key=${apiKey}`,
+    lookup<{ solarPotential?: { maxSunshineHoursPerYear?: number; wholeRoofStats?: { areaMeters2?: number }; maxArrayPanelsCount?: number; panelCapacityWatts?: number } }>(
+      "Solar", `https://solar.googleapis.com/v1/buildingInsights:findClosest?${location}&requiredQuality=LOW&key=${apiKey}`,
     ).then((data) => {
       const solar = data?.solarPotential;
       return solar ? {
         maxSunshineHoursPerYear: solar.maxSunshineHoursPerYear ?? null,
         areaMeters2: solar.wholeRoofStats?.areaMeters2 ?? null,
         maxArrayPanelsCount: solar.maxArrayPanelsCount ?? null,
+        maxPowerKw: solar.maxArrayPanelsCount != null && solar.panelCapacityWatts != null
+          ? solar.maxArrayPanelsCount * solar.panelCapacityWatts / 1000
+          : null,
       } : null;
     }),
     lookup<{ indexes?: Array<{ aqiDisplay?: string; category?: string }> }>(

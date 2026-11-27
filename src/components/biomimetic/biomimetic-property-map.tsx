@@ -16,6 +16,7 @@ import {
   Trees,
   X,
 } from "lucide-react";
+import type { GeoIntelligence } from "../../app/api/geo/intelligence/route";
 
 export interface PropertyMarkerData {
   id: string;
@@ -39,6 +40,8 @@ export type MapPoint = { lat: number; lng: number };
 export type RouteDestination = MapPoint & { mode: RouteMode };
 export type RouteInfo = { distance: string; duration: string };
 export type IntelligenceLayer = "solar" | "air" | "pollen" | "weather" | "terrain" | "timezone";
+type VisualLayer = IntelligenceLayer | "bicycling" | "range" | "routes" | "streetview" | null;
+type PollenType = "TREE_UPI" | "GRASS_UPI" | "WEED_UPI";
 
 interface BiomimeticMapProps {
   properties: PropertyMarkerData[];
@@ -63,6 +66,8 @@ interface BiomimeticMapProps {
   orbitTarget?: (MapPoint & { ts: number }) | null;
   onIntelligenceRequest?: (tab: IntelligenceLayer, point: MapPoint) => void;
   activeIntelligenceLayer?: IntelligenceLayer | "aerial" | null;
+  intelligencePoint?: MapPoint;
+  intelligenceData?: GeoIntelligence | null;
   onAerialRequest?: (point: MapPoint) => void;
   aerialVideoUrl?: string | null;
   onCloseAerialVideo?: () => void;
@@ -95,6 +100,8 @@ export function BiomimeticPropertyMap({
   orbitTarget,
   onIntelligenceRequest,
   activeIntelligenceLayer,
+  intelligencePoint,
+  intelligenceData,
   onAerialRequest,
   aerialVideoUrl,
   onCloseAerialVideo,
@@ -123,8 +130,8 @@ export function BiomimeticPropertyMap({
   const [map3d, setMap3d] = useState<google.maps.maps3d.Map3DElement | null>(null);
   const [maps3dLibrary, setMaps3dLibrary] = useState<google.maps.Maps3DLibrary | null>(null);
   const [mapType, setMapType] = useState<"earth3d" | "hybrid" | "roadmap" | "terrain">("earth3d");
-  const [bicyclingEnabled, setBicyclingEnabled] = useState(false);
-  const [rangeEnabled, setRangeEnabled] = useState(false);
+  const [visualLayer, setVisualLayer] = useState<VisualLayer>(null);
+  const [pollenType, setPollenType] = useState<PollenType>("TREE_UPI");
   const [routePlanActive, setRoutePlanActive] = useState(false);
   const [routeStopCount, setRouteStopCount] = useState(0);
   const [routePlanInfo, setRoutePlanInfo] = useState<RouteInfo | null>(null);
@@ -316,8 +323,14 @@ export function BiomimeticPropertyMap({
         }
       }
       map?.setMapTypeId(type);
+      map?.setTilt(45);
     }
     setMapType(type);
+  }
+
+  function activateVisualLayer(layer: VisualLayer, type: "hybrid" | "roadmap" | "terrain" = "hybrid") {
+    setVisualLayer(layer);
+    if (layer) changeMapType(type);
   }
 
   function getCurrentMapPoint(): MapPoint {
@@ -430,17 +443,28 @@ export function BiomimeticPropertyMap({
 
   useEffect(() => {
     if (orbitTarget) {
+      setVisualLayer(null);
       setMapType("earth3d");
     }
   }, [orbitTarget]);
 
   useEffect(() => {
-    if (streetViewTarget) changeMapType("hybrid");
+    if (streetViewTarget) activateVisualLayer("streetview");
   }, [streetViewTarget]);
 
   useEffect(() => {
-    if (routeDestination) changeMapType("hybrid");
+    if (routeDestination) activateVisualLayer("routes");
   }, [routeDestination]);
+
+  useEffect(() => {
+    if (activeIntelligenceLayer === "solar" || activeIntelligenceLayer === "air" || activeIntelligenceLayer === "pollen") {
+      activateVisualLayer(activeIntelligenceLayer);
+    } else if (activeIntelligenceLayer === "terrain") {
+      activateVisualLayer("terrain", "terrain");
+    } else if (activeIntelligenceLayer === null) {
+      setVisualLayer((layer) => layer === "solar" || layer === "air" || layer === "pollen" || layer === "terrain" ? null : layer);
+    }
+  }, [activeIntelligenceLayer]);
 
   useEffect(() => {
     if (!map || mapType === "earth3d") return;
@@ -454,9 +478,32 @@ export function BiomimeticPropertyMap({
   }, [map, mapType]);
 
   useEffect(() => {
-    if (!map || mapType === "earth3d" || !bicyclingEnabled) return;
+    if (!map || mapType === "earth3d" || !apiKey || (visualLayer !== "air" && visualLayer !== "pollen")) return;
+    const urlPrefix = visualLayer === "air" ? "airquality" : "pollen";
+    const mapTypeName = visualLayer === "air" ? "UAQI_INDIGO_PERSIAN" : pollenType;
+    const opacity = visualLayer === "air" ? 0.68 : 0.65;
+    const heatmap = new google.maps.ImageMapType({
+      name: visualLayer === "air" ? "Air Quality Heatmap Tiles" : "Pollen Heatmap Tiles",
+      opacity,
+      tileSize: new google.maps.Size(256, 256),
+      minZoom: visualLayer === "pollen" ? 3 : undefined,
+      maxZoom: visualLayer === "pollen" ? 16 : undefined,
+      getTileUrl: (coord, zoom) => {
+        if (visualLayer === "pollen" && (zoom < 3 || zoom > 16)) return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        return `https://${urlPrefix}.googleapis.com/v1/mapTypes/${mapTypeName}/heatmapTiles/${zoom}/${coord.x}/${coord.y}?key=${encodeURIComponent(apiKey)}`;
+      },
+    });
+    const index = map.overlayMapTypes.push(heatmap) - 1;
+    return () => {
+      if (map.overlayMapTypes.getAt(index) === heatmap) map.overlayMapTypes.removeAt(index);
+    };
+  }, [map, mapType, visualLayer, pollenType]);
+
+  useEffect(() => {
+    if (!map || mapType === "earth3d" || visualLayer !== "bicycling") return;
     let cancelled = false;
     let layer: google.maps.BicyclingLayer | null = null;
+    map.setMapTypeId("roadmap");
     void importLibrary("maps").then(({ BicyclingLayer }) => {
       if (cancelled) return;
       layer = new BicyclingLayer();
@@ -464,32 +511,74 @@ export function BiomimeticPropertyMap({
     }).catch((cause) => {
       console.error("Nie udało się włączyć warstwy rowerowej:", cause);
       callbacks.current.onMapError("Nie udało się włączyć warstwy rowerowej Google Maps.");
-      setBicyclingEnabled(false);
+      setVisualLayer(null);
     });
     return () => {
       cancelled = true;
       layer?.setMap(null);
     };
-  }, [map, mapType, bicyclingEnabled]);
+  }, [map, mapType, visualLayer]);
 
   useEffect(() => {
-    if (!map || mapType === "earth3d" || !rangeEnabled) return;
-    const circle = new google.maps.Circle({
-      map,
-      center: routeOrigin ?? map.getCenter()?.toJSON() ?? getCurrentMapPoint(),
-      radius: 10_000,
-      clickable: false,
-      fillColor: "#1a73e8",
-      fillOpacity: 0.12,
-      strokeColor: "#1a73e8",
-      strokeOpacity: 0.8,
-      strokeWeight: 2,
-    });
-    return () => circle.setMap(null);
-  }, [map, mapType, rangeEnabled, routeOrigin?.lat, routeOrigin?.lng]);
+    if (!map || mapType === "earth3d" || visualLayer !== "range") return;
+    const center = routeOrigin ?? intelligencePoint ?? map.getCenter()?.toJSON() ?? getCurrentMapPoint();
+    const zones = [
+      { radius: 1200, color: "#00f5d4", opacity: 0.11, width: 3 },
+      { radius: 2700, color: "#38bdf8", opacity: 0.09, width: 3 },
+      { radius: 4200, color: "#a855f7", opacity: 0.07, width: 3 },
+    ];
+    const circles = zones.map((zone) => new google.maps.Circle({
+      map, center, radius: zone.radius, clickable: false,
+      fillColor: zone.color, fillOpacity: zone.opacity,
+      strokeColor: zone.color, strokeOpacity: 0.95, strokeWeight: zone.width,
+      zIndex: 15_000 - zone.radius,
+    }));
+    return () => circles.forEach((circle) => circle.setMap(null));
+  }, [map, mapType, visualLayer, routeOrigin?.lat, routeOrigin?.lng, intelligencePoint?.lat, intelligencePoint?.lng]);
 
   useEffect(() => {
-    if (terrainRequest && map) changeMapType("terrain");
+    if (!map || mapType === "earth3d" || visualLayer !== "solar") return;
+    const center = intelligencePoint ?? routeOrigin ?? map.getCenter()?.toJSON() ?? getCurrentMapPoint();
+    const area = intelligenceData?.solar?.areaMeters2 ?? 100;
+    const radius = Math.max(180, Math.min(900, Math.sqrt(area) * 35));
+    const layers = [
+      { scale: 1.2, fill: "#f59e0b", fillOpacity: 0.06, stroke: "#f59e0b", opacity: 0.35, width: 8 },
+      { scale: 0.82, fill: "#f97316", fillOpacity: 0.1, stroke: "#fb923c", opacity: 0.75, width: 4 },
+      { scale: 0.52, fill: "#a855f7", fillOpacity: 0.14, stroke: "#c084fc", opacity: 0.95, width: 2 },
+    ];
+    const circles = layers.map((layer) => new google.maps.Circle({
+      map, center, radius: radius * layer.scale, clickable: false,
+      fillColor: layer.fill, fillOpacity: layer.fillOpacity,
+      strokeColor: layer.stroke, strokeOpacity: layer.opacity, strokeWeight: layer.width,
+    }));
+    const label = document.createElement("div");
+    label.style.cssText = "padding:9px 12px;border:1px solid rgba(251,191,36,.7);border-radius:12px;background:rgba(18,12,31,.88);color:#fff;font:600 12px/1.4 system-ui;box-shadow:0 0 22px rgba(245,158,11,.45);white-space:nowrap";
+    const sunshine = intelligenceData?.solar?.maxSunshineHoursPerYear;
+    const power = intelligenceData?.solar?.maxPowerKw;
+    label.textContent = sunshine != null || power != null
+      ? `${sunshine != null ? `${Math.round(sunshine).toLocaleString("pl-PL")} godz./rok` : "Nasłonecznienie"}${power != null ? ` · ${power.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} kW` : ""}`
+      : "Solar API · analiza nasłonecznienia";
+    const info = new google.maps.InfoWindow({ content: label, position: center, disableAutoPan: true });
+    info.open(map);
+    return () => {
+      circles.forEach((circle) => circle.setMap(null));
+      info.close();
+    };
+  }, [map, mapType, visualLayer, intelligencePoint?.lat, intelligencePoint?.lng, routeOrigin?.lat, routeOrigin?.lng, intelligenceData?.solar]);
+
+  useEffect(() => {
+    if (!map || mapType === "earth3d" || visualLayer !== "terrain" || intelligenceData?.elevation == null) return;
+    const position = intelligencePoint ?? routeOrigin ?? map.getCenter()?.toJSON() ?? getCurrentMapPoint();
+    const label = document.createElement("div");
+    label.style.cssText = "padding:7px 10px;border-radius:9px;background:rgba(5,46,22,.9);border:1px solid #34d399;color:#ecfdf5;font:700 13px/1.2 system-ui;box-shadow:0 0 18px rgba(52,211,153,.45)";
+    label.textContent = `${Math.round(intelligenceData.elevation).toLocaleString("pl-PL")} m n.p.m.`;
+    const info = new google.maps.InfoWindow({ content: label, position, disableAutoPan: true });
+    info.open(map);
+    return () => info.close();
+  }, [map, mapType, visualLayer, intelligencePoint?.lat, intelligencePoint?.lng, routeOrigin?.lat, routeOrigin?.lng, intelligenceData?.elevation]);
+
+  useEffect(() => {
+    if (terrainRequest && map) activateVisualLayer("terrain", "terrain");
   }, [terrainRequest, map]);
 
   useEffect(() => {
@@ -632,6 +721,11 @@ export function BiomimeticPropertyMap({
     return () => { cancelled = true; };
   }, [map, streetViewTarget]);
 
+  const pollenPoint = intelligencePoint ?? routeOrigin ?? { lat: 50.967, lng: 16.615 };
+  const pollenInPoland = pollenPoint.lat >= 49 && pollenPoint.lat <= 55 && pollenPoint.lng >= 14 && pollenPoint.lng <= 24.5;
+  const pollenOutOfSeason = pollenInPoland && new Date().getMonth() === 10
+    && intelligenceData?.pollen?.some((item) => item.inSeason === true) !== true;
+
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className={mapType === "earth3d" ? "relative z-0 hidden h-full w-full" : "relative z-0 h-full w-full"} aria-label="Interaktywna mapa Google" />
@@ -650,26 +744,64 @@ export function BiomimeticPropertyMap({
           {routePlanError ?? `Objazd: ${routePlanInfo?.distance} · ${routePlanInfo?.duration}`}
         </div>
       )}
+      {visualLayer === "air" && (
+        <div className="pointer-events-none absolute left-3 top-3 z-10 w-[190px] rounded-xl border border-cyan-300/40 bg-slate-950/80 p-3 text-[10px] text-white shadow-[0_0_24px_rgba(34,211,238,.25)] backdrop-blur-md">
+          <div className="mb-2 font-semibold tracking-wide text-cyan-100">JAKOŚĆ POWIETRZA · UAQI</div>
+          <div className="h-2 rounded-full bg-gradient-to-r from-indigo-950 via-fuchsia-500 via-40% to-cyan-300" />
+          <div className="mt-1.5 flex justify-between text-white/70"><span>Dobra</span><span>Umiarkowana</span><span>Zła</span></div>
+        </div>
+      )}
+      {visualLayer === "pollen" && (
+        <div className="pointer-events-auto absolute left-3 top-3 z-10 max-w-[calc(100%-1.5rem)] rounded-xl border border-fuchsia-300/40 bg-slate-950/85 p-2.5 text-white shadow-[0_0_24px_rgba(217,70,239,.2)] backdrop-blur-md">
+          <div className="flex gap-1 rounded-full bg-white/10 p-1 text-[10px]">
+            {([
+              ["TREE_UPI", "Drzewa"],
+              ["GRASS_UPI", "Trawy"],
+              ["WEED_UPI", "Chwasty"],
+            ] as const).map(([type, label]) => (
+              <button key={type} type="button" aria-pressed={pollenType === type} onClick={() => setPollenType(type)} className={`rounded-full px-2 py-1 ${pollenType === type ? "bg-fuchsia-500 text-white shadow-[0_0_12px_rgba(217,70,239,.7)]" : "text-white/70 hover:text-white"}`}>
+                {label} ({type})
+              </button>
+            ))}
+          </div>
+          {pollenOutOfSeason && <p className="mt-2 max-w-[420px] text-[11px] leading-relaxed text-fuchsia-100">Warstwa aktywna (poza sezonem pylenia w PL — oddal mapę na południe, aby zobaczyć chmury pyłków)</p>}
+        </div>
+      )}
+      {visualLayer === "range" && (
+        <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-xl border border-cyan-300/30 bg-slate-950/80 px-3 py-2 text-[10px] text-white shadow-[0_0_20px_rgba(56,189,248,.22)] backdrop-blur-md">
+          <div className="mb-1 font-semibold tracking-widest">RADAR IZOCHRONNY</div>
+          <div className="flex gap-3"><span className="text-[#00f5d4]">● 5 min</span><span className="text-[#38bdf8]">● 10 min</span><span className="text-[#a855f7]">● 15 min</span></div>
+        </div>
+      )}
       <div aria-label="Warstwy Google Maps" className="pointer-events-auto absolute bottom-12 left-3 right-3 z-50 flex w-fit max-w-[calc(100%-1.5rem)] gap-1.5 overflow-x-auto rounded-lg">
-        <button type="button" aria-pressed={mapType === "earth3d"} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${mapType === "earth3d" ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => changeMapType(mapType === "earth3d" ? "hybrid" : "earth3d")}><Box className="h-[13px] w-[13px]" />3D</button>
-        <button type="button" aria-pressed={bicyclingEnabled} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${bicyclingEnabled ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => { if (mapType === "earth3d") changeMapType("hybrid"); setBicyclingEnabled((enabled) => !enabled); }}><Bike className="h-[13px] w-[13px]" />Rower</button>
+        <button type="button" aria-pressed={mapType === "earth3d"} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${mapType === "earth3d" ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
+          setVisualLayer(null);
+          routePlanner.current.active = false;
+          setRoutePlanActive(false);
+          changeMapType("earth3d");
+        }}><Box className="h-[13px] w-[13px]" />3D</button>
+        <button type="button" aria-pressed={visualLayer === "bicycling"} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${visualLayer === "bicycling" ? "border-emerald-400 bg-emerald-500 text-white shadow-[0_0_14px_rgba(16,185,129,.5)]" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => activateVisualLayer(visualLayer === "bicycling" ? null : "bicycling", "roadmap")}><Bike className="h-[13px] w-[13px]" />Rower</button>
         <button type="button" aria-pressed={Boolean(streetViewTarget)} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${streetViewTarget ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
-          if (streetViewTarget) onCloseStreetView?.();
+          if (streetViewTarget) {
+            setVisualLayer(null);
+            onCloseStreetView?.();
+          }
           else {
-            changeMapType("hybrid");
+            activateVisualLayer("streetview");
             onStreetViewRequest?.(getCurrentMapPoint());
           }
         }}><Trees className="h-[13px] w-[13px]" />Street View</button>
-        <button type="button" aria-pressed={rangeEnabled} title="Przybliżony zasięg 15 min — okrąg 10 km, gdy brak poligonu izochrony" className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${rangeEnabled ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => { if (mapType === "earth3d") changeMapType("hybrid"); setRangeEnabled((enabled) => !enabled); }}><Mountain className="h-[13px] w-[13px]" />15 min</button>
+        <button type="button" aria-pressed={visualLayer === "range"} title="Hud izochron: przybliżone strefy 5, 10 i 15 min" className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${visualLayer === "range" ? "border-cyan-400 bg-cyan-500 text-slate-950 shadow-[0_0_14px_rgba(0,245,212,.5)]" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => activateVisualLayer(visualLayer === "range" ? null : "range")}><Mountain className="h-[13px] w-[13px]" />15 min</button>
         <button type="button" aria-pressed={routePlanActive} title={routePlanActive ? `Klikaj punkty na mapie (${routeStopCount}); ponownie kliknij, aby zakończyć` : "Kliknij, aby dodać punkty zoptymalizowanej trasy objazdu"} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${routePlanActive ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
           if (routePlanActive) {
             routePlanner.current.active = false;
             setRoutePlanActive(false);
+            if (visualLayer === "routes") setVisualLayer(null);
           } else {
             clearRoutePlan();
             routePlanner.current.active = true;
             setRoutePlanActive(true);
-            changeMapType("hybrid");
+            activateVisualLayer("routes");
             callbacks.current.onRouteError?.(null);
             callbacks.current.onRouteInfo?.(null);
           }
@@ -683,8 +815,10 @@ export function BiomimeticPropertyMap({
           ["terrain", "Teren", Mountain],
           ["timezone", "Czas", Clock3],
         ] as const).map(([id, label, Icon]) => (
-          <button key={id} type="button" aria-pressed={activeIntelligenceLayer === id} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${activeIntelligenceLayer === id ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
-            if (id === "terrain") changeMapType("terrain");
+          <button key={id} type="button" aria-pressed={visualLayer === id} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${visualLayer === id ? "border-fuchsia-400 bg-fuchsia-500 text-white shadow-[0_0_16px_rgba(217,70,239,.4)]" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
+            if (id === "solar" || id === "air" || id === "pollen") activateVisualLayer(id);
+            else if (id === "terrain") activateVisualLayer("terrain", "terrain");
+            else if (visualLayer === id) setVisualLayer(null);
             callbacks.current.onIntelligenceRequest?.(id, getCurrentMapPoint());
           }}><Icon className="h-[13px] w-[13px]" />{label}</button>
         ))}

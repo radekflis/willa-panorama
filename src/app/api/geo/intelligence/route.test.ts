@@ -16,7 +16,7 @@ test("analizuje niezależne usługi, buforuje wyniki i ponawia błędy", async (
     const url = String(input);
     calls.push({ url, init });
     if (url.includes("/elevation/")) return Response.json({ status: "OK", results: [{ elevation: 125 }] });
-    if (url.includes("solar.googleapis.com")) return noSolar ? new Response(null, { status: 404 }) : Response.json({ solarPotential: { maxSunshineHoursPerYear: 1200, wholeRoofStats: { areaMeters2: 90 }, maxArrayPanelsCount: 20 } });
+    if (url.includes("solar.googleapis.com")) return noSolar ? new Response(null, { status: 404 }) : Response.json({ solarPotential: { maxSunshineHoursPerYear: 1200, wholeRoofStats: { areaMeters2: 90 }, maxArrayPanelsCount: 20, panelCapacityWatts: 400 } });
     if (url.includes("airquality.googleapis.com")) {
       return failAir ? new Response(null, { status: 503 }) : Response.json({ indexes: [{ aqiDisplay: "42", category: "Dobra" }] });
     }
@@ -41,7 +41,7 @@ test("analizuje niezależne usługi, buforuje wyniki i ponawia błędy", async (
     assert.deepEqual(await concurrent.json(), data);
     assert.deepEqual(data, {
       elevation: 125,
-      solar: { maxSunshineHoursPerYear: 1200, areaMeters2: 90, maxArrayPanelsCount: 20 },
+      solar: { maxSunshineHoursPerYear: 1200, areaMeters2: 90, maxArrayPanelsCount: 20, maxPowerKw: 8 },
       airQuality: { aqiDisplay: "42", category: "Dobra" },
       pollen: [{ displayName: "Trawy", indexInfo: { category: "Niski" } }],
       weather: { temperature: 18, conditions: "Słonecznie" },
@@ -52,6 +52,7 @@ test("analizuje niezależne usługi, buforuje wyniki i ponawia błędy", async (
     const airCall = calls.find(({ url }) => url.includes("airquality.googleapis.com"));
     assert.equal(airCall?.init?.method, "POST");
     assert.deepEqual(JSON.parse(String(airCall?.init?.body)), { location: { latitude: 51.12341, longitude: 17.12341 } });
+    assert.match(calls.find(({ url }) => url.includes("solar.googleapis.com"))?.url ?? "", /requiredQuality=LOW/);
 
     await POST(request(51.12342, 17.12342));
     assert.equal(calls.length, 8);

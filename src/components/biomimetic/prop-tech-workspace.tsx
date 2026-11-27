@@ -52,7 +52,7 @@ function IntelligenceDetails({ tab, data }: { tab: IntelligenceTab; data: GeoInt
     return data.solar ? <div>
       <p>Powierzchnia dachu: {number(data.solar.areaMeters2, "m²")}</p>
       <p>Nasłonecznienie: {number(data.solar.maxSunshineHoursPerYear, "godz./rok")}</p>
-      <p>Potencjał paneli PV: {number(data.solar.maxArrayPanelsCount, "paneli")}</p>
+      <p>Potencjał paneli PV: {number(data.solar.maxPowerKw, "kW")}</p>
     </div> : <p>Brak danych dla tego punktu.</p>;
   }
   if (tab === "terrain") return <p>Wysokość n.p.m.: {number(data.elevation, "m")}</p>;
@@ -337,6 +337,8 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
         terrainRequest={terrainRequest}
         onIntelligenceRequest={(tab, point) => void openIntelligence(tab, point)}
         activeIntelligenceLayer={activeIntelligenceTab}
+        intelligencePoint={intelligenceTab?.point}
+        intelligenceData={currentIntelligence?.status === "ready" ? currentIntelligence.data : null}
         onAerialRequest={(point) => {
           setStreetView(null);
           void openIntelligence("aerial", point);
@@ -346,7 +348,7 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
         onAerialVideoError={fallbackToOrbit}
       />
 
-      {activeIntelligenceTab && (
+      {activeIntelligenceTab && (["weather", "timezone", "aerial"].includes(activeIntelligenceTab) || currentIntelligence?.status !== "ready") && (
         <section aria-label={intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label ?? "Przelot"} className="pointer-events-auto fixed bottom-[104px] left-3 z-50 max-h-[28dvh] w-[min(360px,calc(100vw-1.5rem))] overflow-y-auto rounded-lg border border-black/10 bg-white/95 p-3 text-xs text-stone-800 shadow-md [text-shadow:none]">
           <div className="mb-2 flex items-center justify-between gap-3">
             <h2 className="text-[13px] font-semibold">{intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label ?? "Przelot"}</h2>
