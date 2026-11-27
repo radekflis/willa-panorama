@@ -40,7 +40,7 @@ export type MapPoint = { lat: number; lng: number };
 export type RouteDestination = MapPoint & { mode: RouteMode };
 export type RouteInfo = { distance: string; duration: string };
 export type IntelligenceLayer = "solar" | "air" | "pollen" | "weather" | "terrain" | "timezone";
-type VisualLayer = IntelligenceLayer | "bicycling" | "range" | "routes" | "streetview" | null;
+export type VisualLayer = IntelligenceLayer | "bicycling" | "range" | "routes" | "streetview" | null;
 type PollenType = "TREE_UPI" | "GRASS_UPI" | "WEED_UPI";
 
 interface BiomimeticMapProps {
@@ -66,6 +66,8 @@ interface BiomimeticMapProps {
   orbitTarget?: (MapPoint & { ts: number }) | null;
   onIntelligenceRequest?: (tab: IntelligenceLayer, point: MapPoint) => void;
   activeIntelligenceLayer?: IntelligenceLayer | "aerial" | null;
+  activeVisualLayer?: VisualLayer;
+  onVisualLayerChange?: (layer: VisualLayer) => void;
   intelligencePoint?: MapPoint;
   intelligenceData?: GeoIntelligence | null;
   onAerialRequest?: (point: MapPoint) => void;
@@ -100,6 +102,8 @@ export function BiomimeticPropertyMap({
   orbitTarget,
   onIntelligenceRequest,
   activeIntelligenceLayer,
+  activeVisualLayer,
+  onVisualLayerChange,
   intelligencePoint,
   intelligenceData,
   onAerialRequest,
@@ -107,7 +111,7 @@ export function BiomimeticPropertyMap({
   onCloseAerialVideo,
   onAerialVideoError,
 }: BiomimeticMapProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const container2dRef = useRef<HTMLDivElement>(null);
   const container3dRef = useRef<HTMLDivElement>(null);
   const callbacks = useRef({
     onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onRouteWarnings, onMapError,
@@ -126,25 +130,32 @@ export function BiomimeticPropertyMap({
   const routePlanLines = useRef<google.maps.Polyline[]>([]);
   const routePlanMarkers = useRef<google.maps.Marker[]>([]);
   const routePlanRequest = useRef(0);
-  const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [map2d, setMap2d] = useState<google.maps.Map | null>(null);
   const [map3d, setMap3d] = useState<google.maps.maps3d.Map3DElement | null>(null);
   const [maps3dLibrary, setMaps3dLibrary] = useState<google.maps.Maps3DLibrary | null>(null);
   const [mapType, setMapType] = useState<"earth3d" | "hybrid" | "roadmap" | "terrain">("earth3d");
-  const [visualLayer, setVisualLayer] = useState<VisualLayer>(null);
+  const [localVisualLayer, setLocalVisualLayer] = useState<VisualLayer>(null);
+  const visualLayer = activeVisualLayer !== undefined ? activeVisualLayer : localVisualLayer;
   const [pollenType, setPollenType] = useState<PollenType>("TREE_UPI");
   const [routePlanActive, setRoutePlanActive] = useState(false);
   const [routeStopCount, setRouteStopCount] = useState(0);
   const [routePlanInfo, setRoutePlanInfo] = useState<RouteInfo | null>(null);
   const [routePlanError, setRoutePlanError] = useState<string | null>(null);
+  const [tileDiagnostic, setTileDiagnostic] = useState<string | null>(null);
   const placeRequest = useRef(0);
   const lastOrbit = useRef<BiomimeticMapProps["orbitTarget"]>(null);
+
+  function setVisualLayer(layer: VisualLayer) {
+    setLocalVisualLayer(layer);
+    onVisualLayerChange?.(layer);
+  }
 
   useEffect(() => {
     if (!apiKey) callbacks.current.onMapError("Google Maps wymaga klucza API. Dodaj NEXT_PUBLIC_GOOGLE_MAPS_API_KEY do konfiguracji i uruchom aplikację ponownie.");
   }, []);
 
   useEffect(() => {
-    if (!apiKey || !containerRef.current) return;
+    if (!apiKey || !container2dRef.current) return;
     let cancelled = false;
     let instance: google.maps.Map | null = null;
     let clickListener: google.maps.MapsEventListener | undefined;
@@ -163,8 +174,8 @@ export function BiomimeticPropertyMap({
           importLibrary("streetView"),
           importLibrary("marker"),
         ]);
-        if (cancelled || !containerRef.current) return;
-        instance = new Map(containerRef.current, {
+        if (cancelled || !container2dRef.current) return;
+        instance = new Map(container2dRef.current, {
           center: { lat: 51.1079, lng: 17.0385 },
           zoom: 11.5,
           mapTypeId: "hybrid",
@@ -210,7 +221,7 @@ export function BiomimeticPropertyMap({
             if (!cancelled && request === placeRequest.current) callbacks.current.onMapError("Nie udało się pobrać informacji o miejscu. Sprawdź dostęp do Places API (New).");
           }
         });
-        setMap(instance);
+        setMap2d(instance);
         mapRef.current = instance;
       } catch (cause) {
         console.error("Nie udało się załadować Google Maps:", cause);
@@ -225,6 +236,7 @@ export function BiomimeticPropertyMap({
       visibleListener?.remove();
       if (instance) google.maps.event.clearInstanceListeners(instance);
       mapRef.current = null;
+      setMap2d(null);
     };
   }, []);
 
@@ -302,28 +314,28 @@ export function BiomimeticPropertyMap({
 
   function changeMapType(type: "earth3d" | "hybrid" | "roadmap" | "terrain") {
     if (type === "earth3d") {
-      if (mapType !== "earth3d" && map && map3d) {
-        const center = map.getCenter();
+      if (mapType !== "earth3d" && map2d && map3d) {
+        const center = map2d.getCenter();
         if (center) {
           map3d.center = { ...center.toJSON(), altitude: 0 };
-          map3d.range = 350 * 2 ** (17 - (map.getZoom() ?? 14.6));
+          map3d.range = 350 * 2 ** (17 - (map2d.getZoom() ?? 14.6));
           map3d.tilt = 62;
-          map3d.heading = map.getHeading() ?? 0;
+          map3d.heading = map2d.getHeading() ?? 0;
         }
       }
     } else {
       if (mapType === "earth3d" && map3d?.center) {
         const center = { lat: map3d.center.lat, lng: map3d.center.lng };
         const zoom = map3d.range ? Math.max(0, Math.min(21, 17 - Math.log2(map3d.range / 350))) : 14;
-        if (map) {
-          map.setCenter(center);
-          map.setZoom(zoom);
+        if (map2d) {
+          map2d.setCenter(center);
+          map2d.setZoom(zoom);
         } else {
           pending2dCamera.current = { center, zoom };
         }
       }
-      map?.setMapTypeId(type);
-      map?.setTilt(45);
+      map2d?.setMapTypeId(type);
+      map2d?.setTilt(45);
     }
     setMapType(type);
   }
@@ -336,7 +348,7 @@ export function BiomimeticPropertyMap({
   function getCurrentMapPoint(): MapPoint {
     if (routeOrigin) return routeOrigin;
     if (mapType === "earth3d" && map3d?.center) return { lat: map3d.center.lat, lng: map3d.center.lng };
-    const center = map?.getCenter()?.toJSON();
+    const center = map2d?.getCenter()?.toJSON();
     if (center) return center;
     if (map3d?.center) return { lat: map3d.center.lat, lng: map3d.center.lng };
     return { lat: 50.967, lng: 16.615 };
@@ -462,26 +474,48 @@ export function BiomimeticPropertyMap({
     } else if (activeIntelligenceLayer === "terrain") {
       activateVisualLayer("terrain", "terrain");
     } else if (activeIntelligenceLayer === null) {
-      setVisualLayer((layer) => layer === "solar" || layer === "air" || layer === "pollen" || layer === "terrain" ? null : layer);
+      if (visualLayer === "solar" || visualLayer === "air" || visualLayer === "pollen" || visualLayer === "terrain") {
+        setVisualLayer(null);
+      }
     }
   }, [activeIntelligenceLayer]);
 
   useEffect(() => {
-    if (!map || mapType === "earth3d") return;
+    if (!map2d || mapType === "earth3d") return;
     if (pending2dCamera.current) {
-      map.setCenter(pending2dCamera.current.center);
-      map.setZoom(pending2dCamera.current.zoom);
+      map2d.setCenter(pending2dCamera.current.center);
+      map2d.setZoom(pending2dCamera.current.zoom);
       pending2dCamera.current = null;
     }
-    map.setMapTypeId(mapType);
-    requestAnimationFrame(() => google.maps.event.trigger(map, "resize"));
-  }, [map, mapType]);
+    map2d.setMapTypeId(mapType);
+    requestAnimationFrame(() => google.maps.event.trigger(map2d, "resize"));
+  }, [map2d, mapType]);
 
   useEffect(() => {
-    if (!map || mapType === "earth3d" || !apiKey || (visualLayer !== "air" && visualLayer !== "pollen")) return;
+    if (!map2d || mapType === "earth3d" || !visualLayer) return;
+    const zoomByLayer: Partial<Record<Exclude<VisualLayer, null>, number>> = {
+      air: 10,
+      pollen: 6,
+      bicycling: 13,
+      terrain: 12,
+      range: 11,
+      solar: 16,
+    };
+    const zoom = zoomByLayer[visualLayer];
+    if (zoom == null) return;
+    if (visualLayer === "bicycling") map2d.setMapTypeId("roadmap");
+    else if (visualLayer === "terrain") map2d.setMapTypeId("terrain");
+    else map2d.setMapTypeId("hybrid");
+    map2d.setZoom(zoom);
+    requestAnimationFrame(() => google.maps.event.trigger(map2d, "resize"));
+  }, [map2d, mapType, visualLayer]);
+
+  useEffect(() => {
+    if (!map2d || mapType === "earth3d" || !apiKey || (visualLayer !== "air" && visualLayer !== "pollen")) return;
     const urlPrefix = visualLayer === "air" ? "airquality" : "pollen";
     const mapTypeName = visualLayer === "air" ? "UAQI_INDIGO_PERSIAN" : pollenType;
-    const opacity = visualLayer === "air" ? 0.68 : 0.65;
+    const opacity = visualLayer === "air" ? 0.72 : 0.7;
+    map2d.overlayMapTypes.clear();
     const heatmap = new google.maps.ImageMapType({
       name: visualLayer === "air" ? "Air Quality Heatmap Tiles" : "Pollen Heatmap Tiles",
       opacity,
@@ -493,21 +527,50 @@ export function BiomimeticPropertyMap({
         return `https://${urlPrefix}.googleapis.com/v1/mapTypes/${mapTypeName}/heatmapTiles/${zoom}/${coord.x}/${coord.y}?key=${encodeURIComponent(apiKey)}`;
       },
     });
-    const index = map.overlayMapTypes.push(heatmap) - 1;
+    const index = map2d.overlayMapTypes.push(heatmap) - 1;
     return () => {
-      if (map.overlayMapTypes.getAt(index) === heatmap) map.overlayMapTypes.removeAt(index);
+      if (map2d.overlayMapTypes.getAt(index) === heatmap) map2d.overlayMapTypes.removeAt(index);
     };
-  }, [map, mapType, visualLayer, pollenType]);
+  }, [map2d, mapType, visualLayer, pollenType]);
 
   useEffect(() => {
-    if (!map || mapType === "earth3d" || visualLayer !== "bicycling") return;
+    if (!map2d || mapType === "earth3d" || !apiKey || (visualLayer !== "air" && visualLayer !== "pollen")) {
+      setTileDiagnostic(null);
+      return;
+    }
+    const center = map2d.getCenter();
+    if (!center) return;
+    const zoom = visualLayer === "air" ? 10 : 6;
+    const scale = 2 ** zoom;
+    const point = center.toJSON();
+    const sinLat = Math.sin(point.lat * Math.PI / 180);
+    const x = Math.floor((point.lng + 180) / 360 * scale);
+    const y = Math.floor((0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * scale);
+    const service = visualLayer === "air" ? "airquality" : "pollen";
+    const mapTypeName = visualLayer === "air" ? "UAQI_INDIGO_PERSIAN" : pollenType;
+    const layerLabel = visualLayer === "air" ? "Powietrze" : "Pyłki";
+    const controller = new AbortController();
+    setTileDiagnostic(`Silnik: 2D | Warstwa: ${layerLabel} | Zoom: ${zoom} | Kafelki: sprawdzanie…`);
+    void fetch(`https://${service}.googleapis.com/v1/mapTypes/${mapTypeName}/heatmapTiles/${zoom}/${x}/${y}?key=${encodeURIComponent(apiKey)}`, {
+      signal: controller.signal,
+    }).then((response) => {
+      setTileDiagnostic(`Silnik: 2D | Warstwa: ${layerLabel} | Zoom: ${zoom} | Kafelki: ${response.ok ? "OK" : `${response.status} ${response.statusText || "Błąd"}`}`);
+    }).catch((cause) => {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      setTileDiagnostic(`Silnik: 2D | Warstwa: ${layerLabel} | Zoom: ${zoom} | Kafelki: Błąd sieci`);
+    });
+    return () => controller.abort();
+  }, [map2d, mapType, visualLayer, pollenType]);
+
+  useEffect(() => {
+    if (!map2d || mapType === "earth3d" || visualLayer !== "bicycling") return;
     let cancelled = false;
     let layer: google.maps.BicyclingLayer | null = null;
-    map.setMapTypeId("roadmap");
+    map2d.setMapTypeId("roadmap");
     void importLibrary("maps").then(({ BicyclingLayer }) => {
       if (cancelled) return;
       layer = new BicyclingLayer();
-      layer.setMap(map);
+      layer.setMap(map2d);
     }).catch((cause) => {
       console.error("Nie udało się włączyć warstwy rowerowej:", cause);
       callbacks.current.onMapError("Nie udało się włączyć warstwy rowerowej Google Maps.");
@@ -517,28 +580,28 @@ export function BiomimeticPropertyMap({
       cancelled = true;
       layer?.setMap(null);
     };
-  }, [map, mapType, visualLayer]);
+  }, [map2d, mapType, visualLayer]);
 
   useEffect(() => {
-    if (!map || mapType === "earth3d" || visualLayer !== "range") return;
-    const center = routeOrigin ?? intelligencePoint ?? map.getCenter()?.toJSON() ?? getCurrentMapPoint();
+    if (!map2d || mapType === "earth3d" || visualLayer !== "range") return;
+    const center = routeOrigin ?? intelligencePoint ?? map2d.getCenter()?.toJSON() ?? getCurrentMapPoint();
     const zones = [
-      { radius: 1200, color: "#00f5d4", opacity: 0.11, width: 3 },
-      { radius: 2700, color: "#38bdf8", opacity: 0.09, width: 3 },
-      { radius: 4200, color: "#a855f7", opacity: 0.07, width: 3 },
+      { radius: 3500, color: "#00f5d4" },
+      { radius: 7000, color: "#38bdf8" },
+      { radius: 11000, color: "#a855f7" },
     ];
     const circles = zones.map((zone) => new google.maps.Circle({
-      map, center, radius: zone.radius, clickable: false,
-      fillColor: zone.color, fillOpacity: zone.opacity,
-      strokeColor: zone.color, strokeOpacity: 0.95, strokeWeight: zone.width,
+      map: map2d, center, radius: zone.radius, clickable: false,
+      fillColor: zone.color, fillOpacity: 0.16,
+      strokeColor: zone.color, strokeOpacity: 0.95, strokeWeight: 2.5,
       zIndex: 15_000 - zone.radius,
     }));
     return () => circles.forEach((circle) => circle.setMap(null));
-  }, [map, mapType, visualLayer, routeOrigin?.lat, routeOrigin?.lng, intelligencePoint?.lat, intelligencePoint?.lng]);
+  }, [map2d, mapType, visualLayer, routeOrigin?.lat, routeOrigin?.lng, intelligencePoint?.lat, intelligencePoint?.lng]);
 
   useEffect(() => {
-    if (!map || mapType === "earth3d" || visualLayer !== "solar") return;
-    const center = intelligencePoint ?? routeOrigin ?? map.getCenter()?.toJSON() ?? getCurrentMapPoint();
+    if (!map2d || mapType === "earth3d" || visualLayer !== "solar") return;
+    const center = intelligencePoint ?? routeOrigin ?? map2d.getCenter()?.toJSON() ?? getCurrentMapPoint();
     const area = intelligenceData?.solar?.areaMeters2 ?? 100;
     const radius = Math.max(180, Math.min(900, Math.sqrt(area) * 35));
     const layers = [
@@ -547,7 +610,7 @@ export function BiomimeticPropertyMap({
       { scale: 0.52, fill: "#a855f7", fillOpacity: 0.14, stroke: "#c084fc", opacity: 0.95, width: 2 },
     ];
     const circles = layers.map((layer) => new google.maps.Circle({
-      map, center, radius: radius * layer.scale, clickable: false,
+      map: map2d, center, radius: radius * layer.scale, clickable: false,
       fillColor: layer.fill, fillOpacity: layer.fillOpacity,
       strokeColor: layer.stroke, strokeOpacity: layer.opacity, strokeWeight: layer.width,
     }));
@@ -559,37 +622,37 @@ export function BiomimeticPropertyMap({
       ? `${sunshine != null ? `${Math.round(sunshine).toLocaleString("pl-PL")} godz./rok` : "Nasłonecznienie"}${power != null ? ` · ${power.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} kW` : ""}`
       : "Solar API · analiza nasłonecznienia";
     const info = new google.maps.InfoWindow({ content: label, position: center, disableAutoPan: true });
-    info.open(map);
+    info.open(map2d);
     return () => {
       circles.forEach((circle) => circle.setMap(null));
       info.close();
     };
-  }, [map, mapType, visualLayer, intelligencePoint?.lat, intelligencePoint?.lng, routeOrigin?.lat, routeOrigin?.lng, intelligenceData?.solar]);
+  }, [map2d, mapType, visualLayer, intelligencePoint?.lat, intelligencePoint?.lng, routeOrigin?.lat, routeOrigin?.lng, intelligenceData?.solar]);
 
   useEffect(() => {
-    if (!map || mapType === "earth3d" || visualLayer !== "terrain" || intelligenceData?.elevation == null) return;
-    const position = intelligencePoint ?? routeOrigin ?? map.getCenter()?.toJSON() ?? getCurrentMapPoint();
+    if (!map2d || mapType === "earth3d" || visualLayer !== "terrain" || intelligenceData?.elevation == null) return;
+    const position = intelligencePoint ?? routeOrigin ?? map2d.getCenter()?.toJSON() ?? getCurrentMapPoint();
     const label = document.createElement("div");
     label.style.cssText = "padding:7px 10px;border-radius:9px;background:rgba(5,46,22,.9);border:1px solid #34d399;color:#ecfdf5;font:700 13px/1.2 system-ui;box-shadow:0 0 18px rgba(52,211,153,.45)";
     label.textContent = `${Math.round(intelligenceData.elevation).toLocaleString("pl-PL")} m n.p.m.`;
     const info = new google.maps.InfoWindow({ content: label, position, disableAutoPan: true });
-    info.open(map);
+    info.open(map2d);
     return () => info.close();
-  }, [map, mapType, visualLayer, intelligencePoint?.lat, intelligencePoint?.lng, routeOrigin?.lat, routeOrigin?.lng, intelligenceData?.elevation]);
+  }, [map2d, mapType, visualLayer, intelligencePoint?.lat, intelligencePoint?.lng, routeOrigin?.lat, routeOrigin?.lng, intelligenceData?.elevation]);
 
   useEffect(() => {
-    if (terrainRequest && map) activateVisualLayer("terrain", "terrain");
-  }, [terrainRequest, map]);
+    if (terrainRequest && map2d) activateVisualLayer("terrain", "terrain");
+  }, [terrainRequest, map2d]);
 
   useEffect(() => {
-    if (!map || !cameraTarget) return;
-    map.panTo({ lat: cameraTarget.lat, lng: cameraTarget.lng });
-    map.moveCamera({
+    if (!map2d || !cameraTarget) return;
+    map2d.panTo({ lat: cameraTarget.lat, lng: cameraTarget.lng });
+    map2d.moveCamera({
       zoom: cameraTarget.zoom,
       tilt: cameraTarget.pitch ?? 45,
       heading: cameraTarget.bearing ?? 0,
     });
-  }, [map, cameraTarget]);
+  }, [map2d, cameraTarget]);
 
   useEffect(() => {
     if (!map3d || !cameraTarget) return;
@@ -615,17 +678,17 @@ export function BiomimeticPropertyMap({
   }, [map3d, mapType, orbitTarget]);
 
   useEffect(() => {
-    if (!map) return;
+    if (!map2d) return;
     const markers = properties.map((property) => {
       const marker = new google.maps.Marker({
-        map,
+        map: map2d,
         position: { lat: property.lat, lng: property.lng },
         title: `Nieruchomość: ${property.priceShort}`,
       });
       markers2d.current.set(property.id, marker);
       marker.addListener("click", () => {
-        map.panTo({ lat: property.lat, lng: property.lng });
-        map.moveCamera({ zoom: 17, tilt: 60, heading: 0 });
+        map2d.panTo({ lat: property.lat, lng: property.lng });
+        map2d.moveCamera({ zoom: 17, tilt: 60, heading: 0 });
         callbacks.current.onSelect(property.id);
       });
       marker.addListener("mouseover", () => callbacks.current.onHover(property.id));
@@ -639,16 +702,16 @@ export function BiomimeticPropertyMap({
       });
       markers2d.current.clear();
     };
-  }, [map, properties]);
+  }, [map2d, properties]);
 
   useEffect(() => {
     markers2d.current.forEach((marker, id) => {
       marker.setZIndex(id === hoveredId || id === selectedId ? google.maps.Marker.MAX_ZINDEX + 1 : undefined);
     });
-  }, [map, properties, hoveredId, selectedId]);
+  }, [map2d, properties, hoveredId, selectedId]);
 
   useEffect(() => {
-    if (!map) return;
+    if (!map2d) return;
     let cancelled = false;
     let polylines: google.maps.Polyline[] = [];
     callbacks.current.onRouteInfo?.(null);
@@ -661,7 +724,7 @@ export function BiomimeticPropertyMap({
     }
     const origin = routeOrigin;
     const destination = routeDestination;
-    const routeMap = map;
+    const routeMap = map2d;
     async function calculateRoute() {
       try {
         const { Route } = await importLibrary("routes");
@@ -695,11 +758,11 @@ export function BiomimeticPropertyMap({
       cancelled = true;
       polylines.forEach((line) => line.setMap(null));
     };
-  }, [map, routeOrigin?.lat, routeOrigin?.lng, routeDestination?.lat, routeDestination?.lng, routeDestination?.mode]);
+  }, [map2d, routeOrigin?.lat, routeOrigin?.lng, routeDestination?.lat, routeDestination?.lng, routeDestination?.mode]);
 
   useEffect(() => {
-    if (!map) return;
-    const panorama = map.getStreetView();
+    if (!map2d) return;
+    const panorama = map2d.getStreetView();
     if (!streetViewTarget) {
       panorama.setVisible(false);
       return;
@@ -719,7 +782,7 @@ export function BiomimeticPropertyMap({
       }
     });
     return () => { cancelled = true; };
-  }, [map, streetViewTarget]);
+  }, [map2d, streetViewTarget]);
 
   const pollenPoint = intelligencePoint ?? routeOrigin ?? { lat: 50.967, lng: 16.615 };
   const pollenInPoland = pollenPoint.lat >= 49 && pollenPoint.lat <= 55 && pollenPoint.lng >= 14 && pollenPoint.lng <= 24.5;
@@ -728,8 +791,8 @@ export function BiomimeticPropertyMap({
 
   return (
     <div className="relative h-full w-full">
-      <div ref={containerRef} className={mapType === "earth3d" ? "relative z-0 hidden h-full w-full" : "relative z-0 h-full w-full"} aria-label="Interaktywna mapa Google" />
-      <div ref={container3dRef} className={mapType === "earth3d" ? "relative z-0 h-full w-full" : "relative z-0 hidden h-full w-full"} aria-label="Interaktywna mapa Google 3D" />
+      <div ref={container2dRef} className={mapType === "earth3d" ? "relative z-0 hidden h-full w-full" : "relative z-0 block h-full w-full"} aria-label="Interaktywna mapa Google 2D" />
+      <div ref={container3dRef} className={mapType === "earth3d" ? "relative z-0 block h-full w-full" : "relative z-0 hidden h-full w-full"} aria-label="Interaktywna mapa Google 3D" />
       {aerialVideoUrl && (
         <div className="absolute inset-4 z-20 overflow-hidden rounded-xl border border-white/30 bg-black shadow-xl">
           <video className="h-full w-full object-cover" src={aerialVideoUrl} autoPlay controls muted playsInline onError={() => {
@@ -744,15 +807,20 @@ export function BiomimeticPropertyMap({
           {routePlanError ?? `Objazd: ${routePlanInfo?.distance} · ${routePlanInfo?.duration}`}
         </div>
       )}
+      {tileDiagnostic && (
+        <div role="status" className="pointer-events-none absolute left-3 top-3 z-20 max-w-[calc(100%-1.5rem)] rounded-md border border-cyan-300/25 bg-slate-950/85 px-2.5 py-1 text-[10px] text-cyan-50 shadow-md backdrop-blur-sm">
+          {tileDiagnostic}
+        </div>
+      )}
       {visualLayer === "air" && (
-        <div className="pointer-events-none absolute left-3 top-3 z-10 w-[190px] rounded-xl border border-cyan-300/40 bg-slate-950/80 p-3 text-[10px] text-white shadow-[0_0_24px_rgba(34,211,238,.25)] backdrop-blur-md">
+        <div className="pointer-events-none absolute left-3 top-12 z-10 w-[190px] rounded-xl border border-cyan-300/40 bg-slate-950/80 p-3 text-[10px] text-white shadow-[0_0_24px_rgba(34,211,238,.25)] backdrop-blur-md">
           <div className="mb-2 font-semibold tracking-wide text-cyan-100">JAKOŚĆ POWIETRZA · UAQI</div>
           <div className="h-2 rounded-full bg-gradient-to-r from-indigo-950 via-fuchsia-500 via-40% to-cyan-300" />
           <div className="mt-1.5 flex justify-between text-white/70"><span>Dobra</span><span>Umiarkowana</span><span>Zła</span></div>
         </div>
       )}
       {visualLayer === "pollen" && (
-        <div className="pointer-events-auto absolute left-3 top-3 z-10 max-w-[calc(100%-1.5rem)] rounded-xl border border-fuchsia-300/40 bg-slate-950/85 p-2.5 text-white shadow-[0_0_24px_rgba(217,70,239,.2)] backdrop-blur-md">
+        <div className="pointer-events-auto absolute left-3 top-12 z-10 max-w-[calc(100%-1.5rem)] rounded-xl border border-fuchsia-300/40 bg-slate-950/85 p-2.5 text-white shadow-[0_0_24px_rgba(217,70,239,.2)] backdrop-blur-md">
           <div className="flex gap-1 rounded-full bg-white/10 p-1 text-[10px]">
             {([
               ["TREE_UPI", "Drzewa"],
@@ -812,7 +880,7 @@ export function BiomimeticPropertyMap({
           ["air", "Powietrze", AirVent],
           ["pollen", "Pyłki", Flower2],
           ["weather", "Pogoda", CloudSun],
-          ["terrain", "Teren", Mountain],
+          ["terrain", "Teren / m n.p.m.", Mountain],
           ["timezone", "Czas", Clock3],
         ] as const).map(([id, label, Icon]) => (
           <button key={id} type="button" aria-pressed={visualLayer === id} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${visualLayer === id ? "border-fuchsia-400 bg-fuchsia-500 text-white shadow-[0_0_16px_rgba(217,70,239,.4)]" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {

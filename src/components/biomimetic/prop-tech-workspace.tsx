@@ -11,6 +11,7 @@ import {
   type RouteInfo,
   type RouteMode,
   type IntelligenceLayer,
+  type VisualLayer,
 } from "./biomimetic-property-map";
 import type { PropertyDetailData } from "./biomimetic-property-detail";
 import { predictSuffix } from "./crystal-prediction";
@@ -129,6 +130,7 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   const [busy, setBusy] = useState(false);
   const [intelligenceTab, setIntelligenceTab] = useState<IntelligenceSelection | null>(null);
   const [intelligence, setIntelligence] = useState<IntelligenceState | null>(null);
+  const [activeVisualLayer, setActiveVisualLayer] = useState<VisualLayer>(null);
   const [terrainRequest, setTerrainRequest] = useState(0);
   const intelligenceRequest = useRef(0);
   const intelligenceCache = useRef(new Map<string, GeoIntelligence>());
@@ -337,6 +339,8 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
         terrainRequest={terrainRequest}
         onIntelligenceRequest={(tab, point) => void openIntelligence(tab, point)}
         activeIntelligenceLayer={activeIntelligenceTab}
+        activeVisualLayer={activeVisualLayer}
+        onVisualLayerChange={setActiveVisualLayer}
         intelligencePoint={intelligenceTab?.point}
         intelligenceData={currentIntelligence?.status === "ready" ? currentIntelligence.data : null}
         onAerialRequest={(point) => {
