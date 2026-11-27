@@ -2,7 +2,14 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
-import { FuturisticMapLayers, type ActiveLayerType } from "../../lib/futuristicLayers";
+import {
+  fetchWeatherForecast,
+  FuturisticMapLayers,
+  type ActiveLayerType,
+  type WeatherHour,
+  type WeatherLayerCode,
+  type WeatherLayerSelection,
+} from "../../lib/futuristicLayers";
 import {
   AirVent,
   Bike,
@@ -70,8 +77,16 @@ interface BiomimeticMapProps {
 }
 
 const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+const openWeatherApiKey = process.env.NEXT_PUBLIC_OPENWEATHER_KEY;
 let loaderConfigured = false;
 const DEFAULT_CENTER = { lat: 50.967, lng: 16.615 };
+const weatherLayerOptions: Array<{ id: WeatherLayerCode; label: string }> = [
+  { id: "temp_new", label: "Temperatura" },
+  { id: "clouds_new", label: "Chmury" },
+  { id: "precipitation_new", label: "Opady" },
+  { id: "wind_new", label: "Wiatr" },
+  { id: "pressure_new", label: "Ciśnienie" },
+];
 
 export function heatmapTileUrl(service: "airquality" | "pollen", type: string, coord: { x: number; y: number }, zoom: number, key: string): string {
   const count = 2 ** zoom;
@@ -127,6 +142,11 @@ export function BiomimeticPropertyMap({
   const [map2d, setMap2d] = useState<google.maps.Map | null>(null);
   const [activeLayer, setActiveLayer] = useState<ActiveLayerType>("none");
   const [radarTime, setRadarTime] = useState("");
+  const [weatherSelection, setWeatherSelection] = useState<WeatherLayerSelection>("temp_new");
+  const [weatherHours, setWeatherHours] = useState<WeatherHour[]>([]);
+  const [weatherHourIndex, setWeatherHourIndex] = useState(0);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
   const [orbitActive, setOrbitActive] = useState(false);
   const [orbitRequest, setOrbitRequest] = useState<(MapPoint & { ts: number }) | null>(null);
   const [localVisualLayer, setLocalVisualLayer] = useState<VisualLayer>(null);
@@ -144,6 +164,17 @@ export function BiomimeticPropertyMap({
       setRoutePlanActive(false);
     }
     onVisualLayerChange?.(layer);
+  }
+
+  function selectWeatherLayer(layer: WeatherLayerSelection) {
+    setWeatherSelection(layer);
+    setRadarTime("");
+    const manager = layersManagerRef.current;
+    if (!manager) return;
+    void manager.setWeatherLayer(layer, setRadarTime).catch((cause) => {
+      console.error("Nie udało się zmienić warstwy pogodowej:", cause);
+      callbacks.current.onMapError("Nie udało się wczytać warstwy pogodowej. Sprawdź połączenie i spróbuj ponownie.");
+    });
   }
 
   useEffect(() => {
@@ -350,7 +381,11 @@ export function BiomimeticPropertyMap({
     setRadarTime("");
     setActiveLayer("none");
     const layers = layersManagerRef.current;
-    if (!map2d || !layers || (visualLayer !== "weather" && visualLayer !== "terrain" && visualLayer !== "air")) return;
+    if (!map2d || !layers) return;
+    if (visualLayer !== "weather" && visualLayer !== "terrain" && visualLayer !== "air") {
+      layers.clearAll();
+      return;
+    }
     let cancelled = false;
     setActiveLayer(visualLayer);
     void layers.toggleLayer(visualLayer, setRadarTime).then((active) => {
@@ -365,7 +400,65 @@ export function BiomimeticPropertyMap({
     });
     return () => {
       cancelled = true;
-      layers.clearAll();
+    };
+  }, [map2d, visualLayer]);
+
+  useEffect(() => () => {
+    layersManagerRef.current?.clearAll();
+  }, [map2d]);
+
+  useEffect(() => {
+    if (!map2d || visualLayer !== "weather") {
+      setWeatherHours([]);
+      setWeatherError(null);
+      setWeatherLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let controller: AbortController | null = null;
+    let requestId = 0;
+    const load = async () => {
+      controller?.abort();
+      const requestController = new AbortController();
+      controller = requestController;
+      const currentRequest = ++requestId;
+      const center = map2d.getCenter()?.toJSON() ?? DEFAULT_CENTER;
+      setWeatherLoading(true);
+      setWeatherError(null);
+      try {
+        const hours = await fetchWeatherForecast(center, requestController.signal);
+        if (cancelled || currentRequest !== requestId) return;
+        setWeatherHours(hours);
+        const now = Date.now();
+        const nearestHour = hours.reduce((bestIndex, hour, index) => {
+          const currentDistance = Math.abs(hour.timestamp - now);
+          const bestDistance = Math.abs(hours[bestIndex].timestamp - now);
+          return currentDistance < bestDistance ? index : bestIndex;
+        }, 0);
+        setWeatherHourIndex(nearestHour);
+      } catch (cause) {
+        if (cancelled || requestController.signal.aborted) return;
+        console.error("Nie udało się pobrać prognozy Open-Meteo:", cause);
+        setWeatherHours([]);
+        setWeatherError("Nie udało się pobrać historii i prognozy pogody.");
+      } finally {
+        if (!cancelled && currentRequest === requestId) setWeatherLoading(false);
+      }
+    };
+    const scheduleLoad = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { void load(); }, 350);
+    };
+    void load();
+    const idleListener = map2d.addListener("idle", scheduleLoad);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      controller?.abort();
+      idleListener.remove();
     };
   }, [map2d, visualLayer]);
 
@@ -553,6 +646,73 @@ export function BiomimeticPropertyMap({
           {routePlanError ?? `Objazd: ${routePlanInfo?.distance} · ${routePlanInfo?.duration}`}
         </div>
       )}
+      {visualLayer === "weather" && (
+        <section aria-label="Panel pogodowy" className="absolute bottom-20 left-3 z-20 max-h-[min(70dvh,520px)] w-[min(430px,calc(100%-1.5rem))] overflow-y-auto rounded-2xl border border-white/20 bg-slate-950/80 p-3 text-white shadow-[0_12px_40px_rgba(2,6,23,.4)] backdrop-blur-xl">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-xs font-semibold tracking-[.16em]">POGODA · LIVE</h2>
+              <p className="text-[10px] text-white/60">Dane dla środka widocznej mapy</p>
+            </div>
+            {radarTime && <span className="text-[10px] text-cyan-200">{radarTime}</span>}
+          </div>
+          <div className="flex flex-wrap gap-1" aria-label="Parametr pogodowy">
+            {weatherLayerOptions.map(({ id, label }) => (
+              <button key={id} type="button" aria-pressed={weatherSelection === id}
+                onClick={() => selectWeatherLayer(id)}
+                className={`rounded-lg border px-2 py-1.5 text-[10px] font-medium transition-colors ${weatherSelection === id ? "border-cyan-300/70 bg-cyan-300/20 text-cyan-100" : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"}`}>
+                {label}
+              </button>
+            ))}
+            <button type="button" aria-pressed={weatherSelection === "radar"}
+              onClick={() => selectWeatherLayer(weatherSelection === "radar" ? "temp_new" : "radar")}
+              className={`rounded-lg border px-2 py-1.5 text-[10px] font-medium transition-colors ${weatherSelection === "radar" ? "border-cyan-300/70 bg-cyan-300/20 text-cyan-100" : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"}`}>
+              Radar na żywo
+            </button>
+          </div>
+          <div className="mt-3">
+            <div className="mb-1 flex justify-between text-[9px] text-white/70">
+              <span>{weatherSelection === "radar" ? "Natężenie opadów" : weatherSelection === "temp_new" ? "Temperatura" : weatherLayerOptions.find(({ id }) => id === weatherSelection)?.label}</span>
+              <span>{weatherSelection === "radar" || !openWeatherApiKey ? "RainViewer" : "OpenWeatherMap"}</span>
+            </div>
+            <div className="h-2 rounded-full bg-[linear-gradient(to_right,#313695,#74add1,#ffffbf,#fdae61,#a50026)]" />
+            <div className="mt-1 flex justify-between text-[9px] text-white/65">
+              {weatherSelection === "temp_new"
+                ? <><span>-20°C</span><span>0°C</span><span>+20°C</span><span>+40°C</span></>
+                : weatherSelection === "radar"
+                  ? <><span>Słabe</span><span>Umiarkowane</span><span>Silne</span></>
+                  : <><span>Niskie</span><span>Średnie</span><span>Wysokie</span></>}
+            </div>
+          </div>
+          {!openWeatherApiKey && (
+            <p className="mt-2 rounded-lg border border-amber-200/20 bg-amber-300/10 px-2 py-1.5 text-[10px] text-amber-100">
+              Brak klucza OpenWeatherMap — kafelki zastępcze RainViewer pokazują radar opadów.
+            </p>
+          )}
+          <div className="mt-3 border-t border-white/15 pt-2">
+            <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+              <span className="font-medium">Historia &amp; prognoza</span>
+              {weatherHours[weatherHourIndex] && <time>{weatherHours[weatherHourIndex].time.replace("T", " ")}</time>}
+            </div>
+            <input aria-label="Czas historii i prognozy pogody" type="range" min={0} max={Math.max(0, weatherHours.length - 1)}
+              step={1} value={Math.min(weatherHourIndex, Math.max(0, weatherHours.length - 1))}
+              disabled={!weatherHours.length || weatherLoading}
+              onChange={(event) => setWeatherHourIndex(Number(event.target.value))}
+              className="h-1.5 w-full cursor-pointer accent-cyan-300 disabled:cursor-wait disabled:opacity-50" />
+            <div className="mt-0.5 flex justify-between text-[9px] text-white/55"><span>-7 dni · Historia</span><span>Teraz</span><span>+7 dni · Prognoza</span></div>
+            {weatherLoading ? <p role="status" className="mt-2 text-[10px] text-white/65">Pobieranie godzinowych danych pogodowych…</p>
+              : weatherError ? <p role="alert" className="mt-2 text-[10px] text-rose-200">{weatherError}</p>
+                : weatherHours[weatherHourIndex] ? (
+                  <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+                    <span className="text-white/60">Temperatura</span><strong>{weatherHours[weatherHourIndex].temperature == null ? "—" : `${weatherHours[weatherHourIndex].temperature}°C`}</strong>
+                    <span className="text-white/60">Opady</span><strong>{weatherHours[weatherHourIndex].precipitation == null ? "—" : `${weatherHours[weatherHourIndex].precipitation} mm`}</strong>
+                    <span className="text-white/60">Wiatr</span><strong>{weatherHours[weatherHourIndex].windSpeed == null ? "—" : `${weatherHours[weatherHourIndex].windSpeed} km/h`}</strong>
+                    <span className="text-white/60">Zachmurzenie</span><strong>{weatherHours[weatherHourIndex].cloudCover == null ? "—" : `${weatherHours[weatherHourIndex].cloudCover}%`}</strong>
+                  </div>
+                ) : <p className="mt-2 text-[10px] text-white/65">Brak godzinowych danych dla tego punktu.</p>}
+          </div>
+          <p className="mt-2 text-[9px] text-white/45">Źródło danych godzinowych: <a className="underline" href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a></p>
+        </section>
+      )}
       {visualLayer === "range" && (
         <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-xl border border-cyan-300/30 bg-slate-950/80 px-3 py-2 text-[10px] text-white shadow-[0_0_20px_rgba(56,189,248,.22)] backdrop-blur-md">
           <div className="mb-1 font-semibold tracking-widest">ORIENTACYJNE PIERŚCIENIE — NIE IZOCHRONA</div>
@@ -601,6 +761,11 @@ export function BiomimeticPropertyMap({
             : visualLayer === id;
           return <button key={id} type="button" aria-pressed={isActive} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${isActive ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
             const next = visualLayer === id ? null : id;
+            if (id === "weather") {
+              setWeatherSelection("temp_new");
+              setWeatherHours([]);
+              setWeatherError(null);
+            }
             activateVisualLayer(next);
             if (next) callbacks.current.onIntelligenceRequest?.(id, getCurrentMapPoint());
           }}><Icon className="h-[13px] w-[13px]" />{label}{id === "weather" && isActive && radarTime ? ` · ${radarTime}` : ""}</button>;
@@ -608,7 +773,9 @@ export function BiomimeticPropertyMap({
       </div>
       {(visualLayer === "weather" || visualLayer === "terrain" || visualLayer === "air") && (
         <div className="absolute bottom-1 left-3 z-10 rounded bg-white/90 px-1.5 text-[10px] text-stone-800">
-          {visualLayer === "weather" ? <>Radar: <a href="https://www.rainviewer.com/" target="_blank" rel="noreferrer">RainViewer</a></>
+          {visualLayer === "weather" ? weatherSelection === "radar" || !openWeatherApiKey
+            ? <>Radar: <a href="https://www.rainviewer.com/" target="_blank" rel="noreferrer">RainViewer</a></>
+            : <>Kafelki: <a href="https://openweathermap.org/" target="_blank" rel="noreferrer">OpenWeatherMap</a></>
             : visualLayer === "terrain" ? <>Dane: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>, SRTM; mapa: © <a href="https://opentopomap.org/" target="_blank" rel="noreferrer">OpenTopoMap</a> (CC-BY-SA)</>
               : <>Obraz: <a href="https://earthdata.nasa.gov/data/tools/gibs" target="_blank" rel="noreferrer">NASA GIBS</a></>}
         </div>

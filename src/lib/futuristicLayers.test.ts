@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test, type TestContext } from "node:test";
-import { FuturisticMapLayers } from "./futuristicLayers";
+import { fetchWeatherForecast, FuturisticMapLayers, openWeatherTileUrl } from "./futuristicLayers";
 
 class FakeImageMapType {
   constructor(public options: google.maps.ImageMapTypeOptions) {}
@@ -36,11 +36,21 @@ function mockGoogle(t: TestContext) {
   });
 }
 
+function withoutOpenWeatherKey(t: TestContext) {
+  const previous = process.env.NEXT_PUBLIC_OPENWEATHER_KEY;
+  delete process.env.NEXT_PUBLIC_OPENWEATHER_KEY;
+  t.after(() => {
+    if (previous === undefined) delete process.env.NEXT_PUBLIC_OPENWEATHER_KEY;
+    else process.env.NEXT_PUBLIC_OPENWEATHER_KEY = previous;
+  });
+}
+
 const point = { x: 2, y: 3, equals: () => false };
 const transparentTile = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
 test("radar uses RainViewer frames and stops without removing other overlays", async (t) => {
   mockGoogle(t);
+  withoutOpenWeatherKey(t);
   t.mock.method(globalThis, "fetch", async () => Response.json({
     host: "https://tiles.example",
     radar: { past: [{ time: 1700000000, path: "/radar/frame" }], nowcast: [] },
@@ -69,6 +79,7 @@ test("radar uses RainViewer frames and stops without removing other overlays", a
 
 test("NASA and terrain layers use their own overlays and restore tilt", async (t) => {
   mockGoogle(t);
+  withoutOpenWeatherKey(t);
   const { map, overlays, getTilt } = createMap();
   const layers = new FuturisticMapLayers(map);
   try {
@@ -79,8 +90,11 @@ test("NASA and terrain layers use their own overlays and restore tilt", async (t
     assert.equal(overlays[0].options.getTileUrl?.(point, 10), transparentTile);
     assert.equal(Reflect.apply(overlays[0].options.getTileUrl!, null, [null, 9]), transparentTile);
     await layers.toggleLayer("terrain");
-    assert.equal(overlays.length, 1);
+    assert.equal(overlays.length, 2);
     assert.equal(getTilt(), 45);
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    assert.equal(overlays.length, 1);
+    assert.equal(overlays[0].options.name, "ElevationContours");
     layers.clearAll();
     assert.equal(getTilt(), 55);
     assert.equal(overlays.length, 0);
@@ -91,6 +105,7 @@ test("NASA and terrain layers use their own overlays and restore tilt", async (t
 
 test("radar leaves supported zoom unchanged and ignores nowcast frames", async (t) => {
   mockGoogle(t);
+  withoutOpenWeatherKey(t);
   t.mock.method(globalThis, "fetch", async () => Response.json({
     host: "https://tiles.example",
     radar: {
@@ -114,6 +129,7 @@ test("radar leaves supported zoom unchanged and ignores nowcast frames", async (
 
 test("radar requires past frames even if a forecast is present", async (t) => {
   mockGoogle(t);
+  withoutOpenWeatherKey(t);
   t.mock.method(globalThis, "fetch", async () => Response.json({
     host: "https://tiles.example",
     radar: { nowcast: [{ time: 1700000600, path: "/radar/forecast" }] },
@@ -126,6 +142,7 @@ test("radar requires past frames even if a forecast is present", async (t) => {
 
 test("late radar responses cannot replace a newer layer", async (t) => {
   mockGoogle(t);
+  withoutOpenWeatherKey(t);
   let resolveResponse!: (response: Response) => void;
   t.mock.method(globalThis, "fetch", () => new Promise<Response>((resolve) => { resolveResponse = resolve; }));
   const { map, overlays, getZoom } = createMap();
@@ -148,10 +165,73 @@ test("late radar responses cannot replace a newer layer", async (t) => {
 
 test("radar failures are reported and do not leave a layer active", async (t) => {
   mockGoogle(t);
+  withoutOpenWeatherKey(t);
   t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 503 }));
   const { map, overlays } = createMap();
   const layers = new FuturisticMapLayers(map);
   await assert.rejects(layers.toggleLayer("weather"), /HTTP 503/);
   assert.equal(overlays.length, 0);
   assert.equal(await layers.toggleLayer("weather").catch(() => "error"), "error");
+});
+
+test("OpenWeather tiles support every layer and replace overlays after double buffering", async (t) => {
+  mockGoogle(t);
+  const previous = process.env.NEXT_PUBLIC_OPENWEATHER_KEY;
+  process.env.NEXT_PUBLIC_OPENWEATHER_KEY = "test-key";
+  t.after(() => {
+    if (previous === undefined) delete process.env.NEXT_PUBLIC_OPENWEATHER_KEY;
+    else process.env.NEXT_PUBLIC_OPENWEATHER_KEY = previous;
+  });
+  assert.equal(openWeatherTileUrl("temp_new", point, 14, "a key"),
+    "https://tile.openweathermap.org/map/temp_new/14/2/3.png?appid=a%20key");
+  assert.equal(openWeatherTileUrl("wind_new", { x: -1, y: 1 }, 2, "key"),
+    "https://tile.openweathermap.org/map/wind_new/2/3/1.png?appid=key");
+  const { map, overlays, getZoom } = createMap();
+  const layers = new FuturisticMapLayers(map);
+  try {
+    await layers.toggleLayer("weather");
+    assert.equal(getZoom(), 14);
+    assert.equal(overlays[0].options.name, "OpenWeather_temp_new");
+    assert.equal(overlays[0].options.getTileUrl?.(point, 14),
+      "https://tile.openweathermap.org/map/temp_new/14/2/3.png?appid=test-key");
+    await layers.setWeatherLayer("clouds_new");
+    assert.equal(overlays.length, 2);
+    assert.equal(overlays[1].options.name, "OpenWeather_clouds_new");
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    assert.deepEqual(overlays.map((overlay) => overlay.options.name), ["OpenWeather_clouds_new"]);
+  } finally {
+    layers.clearAll();
+  }
+});
+
+test("Open-Meteo requests hourly history and forecast for the map point", async (t) => {
+  let requestUrl = "";
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    requestUrl = String(input);
+    return Response.json({
+      utc_offset_seconds: 3600,
+      hourly: {
+        time: ["2025-01-01T00:00"],
+        temperature_2m: [3.5],
+        precipitation: [0.2],
+        wind_speed_10m: [12],
+        cloud_cover: [80],
+      },
+    });
+  });
+  const hours = await fetchWeatherForecast({ lat: 50.1, lng: 16.2 }, new AbortController().signal);
+  const url = new URL(requestUrl);
+  assert.equal(url.origin + url.pathname, "https://api.open-meteo.com/v1/forecast");
+  assert.equal(url.searchParams.get("latitude"), "50.1");
+  assert.equal(url.searchParams.get("longitude"), "16.2");
+  assert.equal(url.searchParams.get("past_days"), "7");
+  assert.equal(url.searchParams.get("forecast_days"), "8");
+  assert.deepEqual(hours[0], {
+    time: "2025-01-01T00:00",
+    timestamp: Date.parse("2024-12-31T23:00:00Z"),
+    temperature: 3.5,
+    precipitation: 0.2,
+    windSpeed: 12,
+    cloudCover: 80,
+  });
 });

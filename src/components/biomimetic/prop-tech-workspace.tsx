@@ -348,9 +348,6 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
           {currentIntelligence?.status === "ready" ? <IntelligenceDetails tab={activeIntelligenceTab} data={currentIntelligence.data} />
             : currentIntelligence?.status === "error" ? <p role="alert">{currentIntelligence.message}</p>
               : <p role="status">Pobieranie danych z Google API...</p>}
-          {activeIntelligenceTab === "weather" && mapZoom > 7 && (
-            <p className="mt-2 text-white/75">Oddal mapę do zoomu 7 lub mniej, aby zobaczyć radar RainViewer.</p>
-          )}
           {activeIntelligenceTab === "air" && (
             <p className="mt-2 text-white/75">
               Nakładka NASA to obraz satelitarny MODIS w kolorach naturalnych, a nie mapa jakości powietrza.
