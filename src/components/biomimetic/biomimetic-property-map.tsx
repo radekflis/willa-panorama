@@ -61,9 +61,9 @@ interface BiomimeticMapProps {
   onPickLocation?: (coords: MapPoint) => void;
   terrainRequest?: number;
   orbitTarget?: (MapPoint & { ts: number }) | null;
-  onIntelligenceRequest?: (tab: IntelligenceLayer) => void;
-  activeIntelligenceLayer?: IntelligenceLayer | null;
-  onAerialRequest?: () => void;
+  onIntelligenceRequest?: (tab: IntelligenceLayer, point: MapPoint) => void;
+  activeIntelligenceLayer?: IntelligenceLayer | "aerial" | null;
+  onAerialRequest?: (point: MapPoint) => void;
   aerialVideoUrl?: string | null;
   onCloseAerialVideo?: () => void;
   onAerialVideoError?: () => void;
@@ -114,6 +114,7 @@ export function BiomimeticPropertyMap({
   };
   const markers2d = useRef(new Map<string, google.maps.Marker>());
   const mapRef = useRef<google.maps.Map | null>(null);
+  const pending2dCamera = useRef<{ center: MapPoint; zoom: number } | null>(null);
   const routePlanner = useRef({ active: false, points: [] as MapPoint[] });
   const routePlanLines = useRef<google.maps.Polyline[]>([]);
   const routePlanMarkers = useRef<google.maps.Marker[]>([]);
@@ -303,14 +304,29 @@ export function BiomimeticPropertyMap({
           map3d.heading = map.getHeading() ?? 0;
         }
       }
-    } else if (map) {
+    } else {
       if (mapType === "earth3d" && map3d?.center) {
-        map.setCenter({ lat: map3d.center.lat, lng: map3d.center.lng });
-        if (map3d.range) map.setZoom(Math.max(0, Math.min(21, 17 - Math.log2(map3d.range / 350))));
+        const center = { lat: map3d.center.lat, lng: map3d.center.lng };
+        const zoom = map3d.range ? Math.max(0, Math.min(21, 17 - Math.log2(map3d.range / 350))) : 14;
+        if (map) {
+          map.setCenter(center);
+          map.setZoom(zoom);
+        } else {
+          pending2dCamera.current = { center, zoom };
+        }
       }
-      map.setMapTypeId(type);
+      map?.setMapTypeId(type);
     }
     setMapType(type);
+  }
+
+  function getCurrentMapPoint(): MapPoint {
+    if (routeOrigin) return routeOrigin;
+    if (mapType === "earth3d" && map3d?.center) return { lat: map3d.center.lat, lng: map3d.center.lng };
+    const center = map?.getCenter()?.toJSON();
+    if (center) return center;
+    if (map3d?.center) return { lat: map3d.center.lat, lng: map3d.center.lng };
+    return { lat: 50.967, lng: 16.615 };
   }
 
   function clearRoutePlan() {
@@ -428,11 +444,17 @@ export function BiomimeticPropertyMap({
 
   useEffect(() => {
     if (!map || mapType === "earth3d") return;
+    if (pending2dCamera.current) {
+      map.setCenter(pending2dCamera.current.center);
+      map.setZoom(pending2dCamera.current.zoom);
+      pending2dCamera.current = null;
+    }
     map.setMapTypeId(mapType);
+    requestAnimationFrame(() => google.maps.event.trigger(map, "resize"));
   }, [map, mapType]);
 
   useEffect(() => {
-    if (!map || !bicyclingEnabled) return;
+    if (!map || mapType === "earth3d" || !bicyclingEnabled) return;
     let cancelled = false;
     let layer: google.maps.BicyclingLayer | null = null;
     void importLibrary("maps").then(({ BicyclingLayer }) => {
@@ -448,13 +470,13 @@ export function BiomimeticPropertyMap({
       cancelled = true;
       layer?.setMap(null);
     };
-  }, [map, bicyclingEnabled]);
+  }, [map, mapType, bicyclingEnabled]);
 
   useEffect(() => {
-    if (!map || !rangeEnabled) return;
+    if (!map || mapType === "earth3d" || !rangeEnabled) return;
     const circle = new google.maps.Circle({
       map,
-      center: routeOrigin ?? map.getCenter()?.toJSON(),
+      center: routeOrigin ?? map.getCenter()?.toJSON() ?? getCurrentMapPoint(),
       radius: 10_000,
       clickable: false,
       fillColor: "#1a73e8",
@@ -464,11 +486,11 @@ export function BiomimeticPropertyMap({
       strokeWeight: 2,
     });
     return () => circle.setMap(null);
-  }, [map, rangeEnabled, routeOrigin?.lat, routeOrigin?.lng]);
+  }, [map, mapType, rangeEnabled, routeOrigin?.lat, routeOrigin?.lng]);
 
   useEffect(() => {
-    if (terrainRequest) changeMapType("terrain");
-  }, [terrainRequest]);
+    if (terrainRequest && map) changeMapType("terrain");
+  }, [terrainRequest, map]);
 
   useEffect(() => {
     if (!map || !cameraTarget) return;
@@ -612,8 +634,8 @@ export function BiomimeticPropertyMap({
 
   return (
     <div className="relative h-full w-full">
-      <div ref={containerRef} className={mapType === "earth3d" ? "hidden h-full w-full" : "h-full w-full"} aria-label="Interaktywna mapa Google" />
-      <div ref={container3dRef} className={mapType === "earth3d" ? "h-full w-full" : "hidden h-full w-full"} aria-label="Interaktywna mapa Google 3D" />
+      <div ref={containerRef} className={mapType === "earth3d" ? "relative z-0 hidden h-full w-full" : "relative z-0 h-full w-full"} aria-label="Interaktywna mapa Google" />
+      <div ref={container3dRef} className={mapType === "earth3d" ? "relative z-0 h-full w-full" : "relative z-0 hidden h-full w-full"} aria-label="Interaktywna mapa Google 3D" />
       {aerialVideoUrl && (
         <div className="absolute inset-4 z-20 overflow-hidden rounded-xl border border-white/30 bg-black shadow-xl">
           <video className="h-full w-full object-cover" src={aerialVideoUrl} autoPlay controls muted playsInline onError={() => {
@@ -628,17 +650,17 @@ export function BiomimeticPropertyMap({
           {routePlanError ?? `Objazd: ${routePlanInfo?.distance} · ${routePlanInfo?.duration}`}
         </div>
       )}
-      <div aria-label="Warstwy Google Maps" className="absolute bottom-12 left-3 right-3 z-10 flex w-fit max-w-[calc(100%-1.5rem)] gap-1.5 overflow-x-auto rounded-lg">
+      <div aria-label="Warstwy Google Maps" className="pointer-events-auto absolute bottom-12 left-3 right-3 z-50 flex w-fit max-w-[calc(100%-1.5rem)] gap-1.5 overflow-x-auto rounded-lg">
         <button type="button" aria-pressed={mapType === "earth3d"} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${mapType === "earth3d" ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => changeMapType(mapType === "earth3d" ? "hybrid" : "earth3d")}><Box className="h-[13px] w-[13px]" />3D</button>
         <button type="button" aria-pressed={bicyclingEnabled} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${bicyclingEnabled ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => { if (mapType === "earth3d") changeMapType("hybrid"); setBicyclingEnabled((enabled) => !enabled); }}><Bike className="h-[13px] w-[13px]" />Rower</button>
         <button type="button" aria-pressed={Boolean(streetViewTarget)} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${streetViewTarget ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
           if (streetViewTarget) onCloseStreetView?.();
           else {
-            const center = routeOrigin ?? map?.getCenter()?.toJSON();
-            if (center) onStreetViewRequest?.(center);
+            changeMapType("hybrid");
+            onStreetViewRequest?.(getCurrentMapPoint());
           }
         }}><Trees className="h-[13px] w-[13px]" />Street View</button>
-        <button type="button" aria-pressed={rangeEnabled} title="Przybliżony zasięg 15 min — okrąg 10 km, gdy brak poligonu izochrony" className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${rangeEnabled ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => setRangeEnabled((enabled) => !enabled)}><Mountain className="h-[13px] w-[13px]" />15 min</button>
+        <button type="button" aria-pressed={rangeEnabled} title="Przybliżony zasięg 15 min — okrąg 10 km, gdy brak poligonu izochrony" className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${rangeEnabled ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => { if (mapType === "earth3d") changeMapType("hybrid"); setRangeEnabled((enabled) => !enabled); }}><Mountain className="h-[13px] w-[13px]" />15 min</button>
         <button type="button" aria-pressed={routePlanActive} title={routePlanActive ? `Klikaj punkty na mapie (${routeStopCount}); ponownie kliknij, aby zakończyć` : "Kliknij, aby dodać punkty zoptymalizowanej trasy objazdu"} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${routePlanActive ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
           if (routePlanActive) {
             routePlanner.current.active = false;
@@ -652,7 +674,7 @@ export function BiomimeticPropertyMap({
             callbacks.current.onRouteInfo?.(null);
           }
         }}><RouteIcon className="h-[13px] w-[13px]" />Trasy{routeStopCount ? ` ${routeStopCount}` : ""}</button>
-        <button type="button" className="flex shrink-0 items-center gap-1.5 rounded-lg border border-black/10 bg-white/95 px-2.5 py-1.5 text-[11px] font-medium text-stone-800 shadow-md hover:bg-stone-50" title="Odtwórz widok Aerial View lub orbitę 3D" onClick={() => onAerialRequest?.()}><Plane className="h-[13px] w-[13px]" />Przelot</button>
+        <button type="button" aria-pressed={activeIntelligenceLayer === "aerial"} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${activeIntelligenceLayer === "aerial" ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} title="Odtwórz widok Aerial View lub orbitę 3D" onClick={() => onAerialRequest?.(getCurrentMapPoint())}><Plane className="h-[13px] w-[13px]" />Przelot</button>
         {([
           ["solar", "Słońce", Sun],
           ["air", "Powietrze", AirVent],
@@ -663,7 +685,7 @@ export function BiomimeticPropertyMap({
         ] as const).map(([id, label, Icon]) => (
           <button key={id} type="button" aria-pressed={activeIntelligenceLayer === id} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium shadow-md ${activeIntelligenceLayer === id ? "border-[#1a73e8] bg-[#1a73e8] text-white" : "border-black/10 bg-white/95 text-stone-800 hover:bg-stone-50"}`} onClick={() => {
             if (id === "terrain") changeMapType("terrain");
-            callbacks.current.onIntelligenceRequest?.(id);
+            callbacks.current.onIntelligenceRequest?.(id, getCurrentMapPoint());
           }}><Icon className="h-[13px] w-[13px]" />{label}</button>
         ))}
       </div>
