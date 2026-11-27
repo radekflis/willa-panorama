@@ -6,6 +6,8 @@ import type { PropertyDetailData } from "./biomimetic-property-detail";
 import { predictSuffix } from "./crystal-prediction";
 import { createPropertyAction } from "@/app/(app)/properties/actions";
 import type { GeoIntelligence } from "@/app/api/geo/intelligence/route";
+import type { GeoInsights } from "@/app/api/geo/insights/route";
+import type { RouteMode, RouteResult } from "@/app/api/geo/route/route";
 
 export interface WorkspaceProperty extends PropertyDetailData {
   priceNumeric: number;
@@ -17,6 +19,12 @@ export interface WorkspaceProperty extends PropertyDetailData {
 
 const TYPES = ["dom", "mieszkanie", "działkę", "apartament"];
 const LOCATIONS = ["w województwie pomorskim", "w dolnośląskim", "w mazowieckim", "nad jeziorem", "w górach"];
+const MAP_CENTER = { lat: 50.967, lng: 16.615 };
+const ROUTE_MODES: Array<{ value: RouteMode; label: string; travelLabel: string }> = [
+  { value: "DRIVE", label: "Auto", travelLabel: "autem" },
+  { value: "WALK", label: "Pieszo", travelLabel: "pieszo" },
+  { value: "BICYCLE", label: "Rower", travelLabel: "rowerem" },
+];
 
 type Intent = "sell" | "buy" | "area" | "unknown";
 
@@ -61,11 +69,14 @@ function SellerForm({ point }: { point: MapPoint }) {
   </form>;
 }
 
-export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
+export function PropTechWorkspace({ properties }: { properties: WorkspaceProperty[] }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const restoreRef = useRef<HTMLButtonElement>(null);
   const mapRef = useRef<PropertyMapHandle>(null);
   const analysisRequest = useRef(0);
+  const insightsRequest = useRef(0);
+  const routeRequest = useRef(0);
+  const selectedOrigin = useRef<MapPoint | null>(null);
   const [query, setQuery] = useState("");
   const [scrollLeft, setScrollLeft] = useState(0);
   const [caretAtEnd, setCaretAtEnd] = useState(true);
@@ -82,9 +93,15 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
   const [analysis, setAnalysis] = useState<GeoIntelligence | null>(null);
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const [nearbyBusy, setNearbyBusy] = useState(false);
+  const [insights, setInsights] = useState<GeoInsights | null>(null);
+  const [insightsBusy, setInsightsBusy] = useState(false);
+  const [routes, setRoutes] = useState<Partial<Record<RouteMode, RouteResult>>>({});
+  const [routeBusy, setRouteBusy] = useState(false);
+  const [routeMode, setRouteMode] = useState<RouteMode>("DRIVE");
 
   function showPoint(next: MapPoint, isApproximate: boolean) {
     analysisRequest.current++;
+    selectedOrigin.current = next;
     setPoint(next);
     setApproximate(isApproximate);
     setPlace(null);
@@ -92,8 +109,58 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
     setAnalysis(null);
     setAnalysisBusy(false);
     setSeller(false);
+    setRoutes({});
+    setRouteBusy(false);
     setPanelOpen(true);
     setMapError(null);
+    void loadInsights(next);
+  }
+
+  async function loadInsights(selected: MapPoint) {
+    const request = ++insightsRequest.current;
+    setInsightsBusy(true);
+    setInsights(null);
+    try {
+      const response = await fetch("/api/geo/insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(selected),
+      });
+      if (!response.ok) throw new Error(`Insights: HTTP ${response.status}`);
+      const data: GeoInsights = await response.json();
+      if (request === insightsRequest.current) setInsights(data);
+    } catch (error) {
+      console.error("Nie udało się pobrać statystyk infrastruktury:", error);
+      if (request === insightsRequest.current) setMapError("Nie udało się pobrać statystyk infrastruktury w promieniu 1 km.");
+    } finally {
+      if (request === insightsRequest.current) setInsightsBusy(false);
+    }
+  }
+
+  async function loadRoutes(destination: MapPoint) {
+    const request = ++routeRequest.current;
+    const property = properties[0];
+    const origin = selectedOrigin.current ?? (property ? { lat: property.lat, lng: property.lng } : MAP_CENTER);
+    setRouteBusy(true);
+    setRoutes({});
+    const results = await Promise.allSettled(ROUTE_MODES.map(async ({ value }) => {
+      const response = await fetch("/api/geo/route", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ origin, destination, mode: value }),
+      });
+      if (!response.ok) throw new Error(`${value}: HTTP ${response.status}`);
+      return [value, await response.json() as RouteResult] as const;
+    }));
+    if (request !== routeRequest.current) return;
+    const next: Partial<Record<RouteMode, RouteResult>> = {};
+    for (const result of results) {
+      if (result.status === "fulfilled") next[result.value[0]] = result.value[1];
+      else console.error("Nie udało się wyznaczyć trasy:", result.reason);
+    }
+    setRoutes(next);
+    setRouteBusy(false);
+    if (Object.keys(next).length === 0) setMapError("Nie udało się wyznaczyć trasy do wybranego miejsca.");
   }
 
   async function analyzePoint(selected: MapPoint) {
@@ -126,7 +193,8 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
       await mapRef.current.searchNearby(selected);
     } catch (error) {
       console.error("Nie udało się pobrać miejsc w pobliżu:", error);
-      setMapError("Nie udało się pobrać miejsc w pobliżu. Sprawdź dostęp do Places API (New).");
+      const detail = error instanceof Error ? error.message : String(error);
+      setMapError(`Diagnostyka Places: ${detail}`);
     } finally {
       setNearbyBusy(false);
     }
@@ -192,16 +260,29 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
         onPoint={showPoint}
         onPlaceLoading={() => {
           analysisRequest.current++;
+          routeRequest.current++;
+          insightsRequest.current++;
           setPoint(null);
           setAnalysis(null);
           setAnalysisBusy(false);
           setSeller(false);
           setPlace(null);
+          setInsights(null);
+          setInsightsBusy(false);
+          setRoutes({});
+          setRouteBusy(false);
           setMapError(null);
           setPlaceLoading(true);
           setPanelOpen(true);
         }}
-        onPlace={(next) => { setPlace(next); setPlaceLoading(false); }}
+        onPlace={(next) => {
+          setPlace(next);
+          setPlaceLoading(false);
+          if (next.location) {
+            void loadInsights(next.location);
+            void loadRoutes(next.location);
+          }
+        }}
       />
 
       {panelOpen && <aside aria-label={place ? "Szczegóły miejsca" : "Wybrany punkt"} className="crystal-dialog fixed right-3 top-3 z-30 max-h-[85dvh] w-[min(90vw,360px)] overflow-y-auto p-4">
@@ -229,6 +310,24 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
               try { mapRef.current?.orbit(place.location); } catch (error) { console.error(error); setMapError("Nie udało się uruchomić przelotu."); }
             }}>Przelot 360°</button>}
           </div>
+          {routeBusy && <p role="status" className="mt-3 text-sm">Wyznaczanie tras…</p>}
+          {Object.keys(routes).length > 0 && <section className="mt-3 text-sm">
+            <h3 className="font-semibold">Dystans i czas dojazdu</h3>
+            <div className="mt-2 flex gap-1">
+              {ROUTE_MODES.map((mode) => <button
+                key={mode.value}
+                type="button"
+                className={`crystal-chip px-2 py-1 text-xs ${routeMode === mode.value ? "ring-1 ring-white" : ""}`}
+                aria-pressed={routeMode === mode.value}
+                onClick={() => setRouteMode(mode.value)}
+              >{mode.label}</button>)}
+            </div>
+            {routes[routeMode] ? <p className="mt-2">
+              {((routes[routeMode]?.distanceMeters ?? 0) / 1000).toLocaleString("pl-PL", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km
+              {" · "}{Math.max(1, Math.round((routes[routeMode]?.durationSeconds ?? 0) / 60))} min{" "}
+              {ROUTE_MODES.find(({ value }) => value === routeMode)?.travelLabel}
+            </p> : <p className="mt-2 text-xs">Brak trasy dla wybranego trybu.</p>}
+          </section>}
         </>}
         {point && !place && !placeLoading && <>
           <h2 className="pr-10 text-lg font-semibold">{seller ? "Dodaj nieruchomość" : "Wybrany punkt"}</h2>
@@ -248,6 +347,13 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
             </div>}
           </>}
         </>}
+        {insightsBusy && <p role="status" className="mt-3 text-sm">Liczenie infrastruktury w promieniu 1 km…</p>}
+        {insights && <section className="mt-3 text-sm">
+          <h3 className="font-semibold">W promieniu 1 km</h3>
+          <p className="mt-1">
+            {insights.restaurants} restauracji · {insights.schools} szkół · {insights.health} aptek · {insights.shops} sklepów · {insights.parks} parków
+          </p>
+        </section>}
         {mapError && <p role="alert" className="mt-3 text-sm">{mapError} <button type="button" className="underline" onClick={() => setMapError(null)}>Zamknij</button></p>}
       </aside>}
       {minimized && !panelOpen && mapError && <div className="crystal-dialog fixed left-3 top-3 z-30 max-w-sm p-4 text-sm" role="alert">

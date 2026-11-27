@@ -28,6 +28,21 @@ const DEFAULT_CENTER = { lat: 50.967, lng: 16.615 };
 const PLACE_FIELDS = ["displayName", "formattedAddress", "nationalPhoneNumber", "websiteURI", "regularOpeningHours", "photos", "location", "rating", "userRatingCount", "primaryTypeDisplayName", "attributions"];
 let loaderConfigured = false;
 
+const PIN_STYLES: Record<string, { background: string; glyph: string }> = {
+  restaurant: { background: "#f97316", glyph: "R" },
+  cafe: { background: "#b45309", glyph: "K" },
+  school: { background: "#2563eb", glyph: "E" },
+  pharmacy: { background: "#dc2626", glyph: "+" },
+  supermarket: { background: "#16a34a", glyph: "S" },
+  park: { background: "#15803d", glyph: "P" },
+  tourist_attraction: { background: "#7c3aed", glyph: "A" },
+};
+
+function errorDetail(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return String(error);
+}
+
 type Props = {
   onMapError: (error: string | null) => void;
   onPoint: (point: MapPoint, approximate: boolean) => void;
@@ -70,6 +85,7 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
           loaderConfigured = true;
         }
         const { Map3DElement, MapMode, Marker3DInteractiveElement } = await google.maps.importLibrary("maps3d");
+        const { PinElement } = await google.maps.importLibrary("marker");
         if (cancelled || !containerRef.current) return;
         const element = new Map3DElement({
           center: DEFAULT_CENTER, mode: MapMode.HYBRID, defaultUIHidden: false,
@@ -156,20 +172,34 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
           const request = ++search;
           const { Place } = await google.maps.importLibrary("places");
           const { places } = await Place.searchNearby({
-            fields: ["id", "displayName", "location", "rating"],
-            locationRestriction: { center: point, radius: 1200 },
-            maxResultCount: 18,
-            includedTypes: ["restaurant", "cafe", "school", "hospital", "pharmacy", "park", "supermarket", "marina", "tourist_attraction"],
+            fields: ["id", "displayName", "location", "rating", "primaryType"],
+            locationRestriction: { center: point, radius: 1500 },
+            maxResultCount: 20,
+            includedTypes: ["restaurant", "cafe", "school", "pharmacy", "supermarket", "park", "tourist_attraction"],
             language: "pl",
           });
           if (cancelled || request !== search) return;
           nearbyMarkers.forEach((marker) => marker.remove());
           nearbyMarkers = places.flatMap((place) => {
             if (!place.id || !place.location) return [];
-            const label = `${place.displayName || "Miejsce"}${place.rating != null ? ` · ★ ${place.rating}` : ""}`;
+            const label = place.displayName || "Miejsce";
+            const style = PIN_STYLES[place.primaryType ?? ""] ?? { background: "#64748b", glyph: "M" };
             const marker = new Marker3DInteractiveElement({
-              position: place.location, altitudeMode: "RELATIVE_TO_GROUND", extruded: true, label, title: label,
+              position: place.location,
+              altitudeMode: "RELATIVE_TO_GROUND",
+              extruded: true,
+              label,
+              title: `${label}${place.rating != null ? ` · ★ ${place.rating}` : ""}`,
+              sizePreserved: true,
+              collisionBehavior: "REQUIRED_AND_HIDES_OPTIONAL",
             });
+            marker.append(new PinElement({
+              background: style.background,
+              borderColor: "#ffffff",
+              glyphColor: "#ffffff",
+              glyphText: style.glyph,
+              scale: 1.1,
+            }));
             marker.addEventListener("gmp-click", (event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -262,7 +292,7 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
         };
         void searchNearby(DEFAULT_CENTER).catch((error: unknown) => {
           console.error("Nie udało się pobrać miejsc w pobliżu:", error);
-          if (!cancelled) callbacks.current.onMapError("Nie udało się pobrać miejsc w pobliżu. Sprawdź dostęp do Places API (New).");
+          if (!cancelled) callbacks.current.onMapError(`Diagnostyka Places: ${errorDetail(error)}`);
         });
       } catch (error) {
         console.error("Nie udało się załadować widoku 3D Google Maps:", error);
