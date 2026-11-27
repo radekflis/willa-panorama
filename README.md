@@ -7,12 +7,12 @@ Ustaw `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` w `.env.local` oraz w środowisku
 wdrożenia i uruchom aplikację ponownie. W projekcie Google Cloud włącz
 rozliczenia, Maps JavaScript API, Places API (New), Routes API i Geocoding API. Klucz
 przeglądarkowy należy ograniczyć do właściwych domen i wymaganych API.
-Mapa wykorzystuje jeden wektorowy silnik Google Maps z widokiem hybrydowym,
-natywnymi kontrolkami i nakładką WebGL Deck.gl. Przyciski 3D i Przelot
+Mapa wykorzystuje Google Maps z widokiem hybrydowym, natywnymi kontrolkami
+oraz nakładkami GroundOverlay generowanymi w Canvas 2D. Przyciski 3D i Przelot
 uruchamiają obrót kamery, a Rower tymczasowo przełącza mapę na widok drogowy.
 Google ogranicza nachylenie zależnie od zoomu (przy zoomie 14 maksymalnie 45°);
 przelot zwiększa zoom do co najmniej 15, aby umożliwić nachylenie 60°.
-Do obrotu i prawidłowego dopasowania warstw 3D potrzebna jest obsługa WebGL2;
+Do obrotu i nachylenia mapy potrzebna jest obsługa wektorowego Google Maps;
 w trybie rastrowym funkcje te mogą być niedostępne.
 Centralne okno AI można zminimalizować i przywrócić przyciskiem u dołu ekranu.
 Po wybraniu nieruchomości, punktu lub miejsca można uruchomić przelot 360°.
@@ -21,9 +21,8 @@ lokalizacji. Korzystanie z tych usług może generować opłaty. Nieruchomości 
 prawidłowych współrzędnych nie są wyświetlane na mapie.
 
 Warstwy słońca, terenu, powietrza, pyłków i pogody przedstawiają syntetyczny
-rozkład wokół punktu, oparty na pojedynczej wartości API, a nie rzeczywiste
-pomiary przestrzenne. Podczas pobierania lub przy braku danych używane są
-wartości przykładowe. Pierścienie 5/10/15 minut są orientacyjne i nie
+rozkład zależny od lokalizacji, a nie dane API ani rzeczywiste pomiary
+przestrzenne. Pierścienie 5/10/15 minut są orientacyjne i nie
 uwzględniają sieci dróg ani rzeczywistego czasu podróży.
 
 Kliknięcie miejsca na mapie otwiera jego szczegóły w aplikacji; trasy i

@@ -334,7 +334,6 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
           }
         }}
         intelligencePoint={activeVisualLayer === intelligenceTab?.tab ? intelligenceTab?.point : undefined}
-        intelligenceData={currentIntelligence?.status === "ready" ? currentIntelligence.data : null}
       />
 
       {activeIntelligenceTab && (["weather", "timezone"].includes(activeIntelligenceTab) || currentIntelligence?.status !== "ready") && (

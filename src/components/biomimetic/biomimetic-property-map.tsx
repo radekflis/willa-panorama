@@ -1,11 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
-import { GoogleMapsOverlay } from "@deck.gl/google-maps";
-import { ContourLayer, HeatmapLayer, HexagonLayer } from "@deck.gl/aggregation-layers";
-import { ScatterplotLayer } from "@deck.gl/layers";
-import type { Color, Layer } from "@deck.gl/core";
+import { generateLayerDataUrl } from "../../lib/map-layer-canvas";
 import {
   AirVent,
   Bike,
@@ -19,7 +16,6 @@ import {
   Sun,
   Trees,
 } from "lucide-react";
-import type { GeoIntelligence } from "../../app/api/geo/intelligence/route";
 
 export interface PropertyMarkerData {
   id: string;
@@ -68,107 +64,11 @@ interface BiomimeticMapProps {
   activeVisualLayer?: VisualLayer;
   onVisualLayerChange?: (layer: VisualLayer) => void;
   intelligencePoint?: MapPoint;
-  intelligenceData?: GeoIntelligence | null;
 }
 
 const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 let loaderConfigured = false;
 const DEFAULT_CENTER = { lat: 50.967, lng: 16.615 };
-
-type GridPoint = { position: [number, number]; weight: number };
-
-function makeGrid(center: MapPoint, layer: IntelligenceLayer, data?: GeoIntelligence | null): GridPoint[] {
-  const parsedAir = Number.parseFloat(data?.airQuality?.aqiDisplay ?? "");
-  const base = layer === "solar" ? data?.solar?.maxSunshineHoursPerYear ?? 1500
-    : layer === "terrain" ? data?.elevation ?? 200
-      : layer === "air" ? (Number.isFinite(parsedAir) ? parsedAir : 50)
-        : layer === "pollen" ? data?.pollen?.reduce<number | null>((max, pollen) => pollen.indexInfo?.value == null ? max : Math.max(max ?? pollen.indexInfo.value, pollen.indexInfo.value), null) ?? 2
-          : data?.weather?.temperature ?? 15;
-  const scale = layer === "solar" ? 350 : layer === "terrain" ? 45 : layer === "air" ? 18 : layer === "pollen" ? 1.5 : 8;
-  const longitudeScale = Math.max(0.01, Math.abs(Math.cos(center.lat * Math.PI / 180)));
-  return Array.from({ length: 24 * 24 }, (_, index) => {
-    const x = (index % 24 - 11.5) / 11.5;
-    const y = (Math.floor(index / 24) - 11.5) / 11.5;
-    const variation = 0.45 * Math.sin(x * 3 + y * 1.8) + 0.3 * Math.cos(y * 4 - x) + 0.25 * Math.sin(x * 5 - y * 3);
-    return {
-      position: [center.lng + x * 1500 / (111320 * longitudeScale), center.lat + y * 1500 / 111320],
-      weight: layer === "terrain" || layer === "weather" ? base + scale * variation : Math.max(0.1, base + scale * variation),
-    };
-  });
-}
-
-export function createLayers(layer: VisualLayer, center: MapPoint, data?: GeoIntelligence | null): Layer[] {
-  if (layer === "range") {
-    return [new ScatterplotLayer({
-      id: "range",
-      data: [
-        { radius: 1500, color: [168, 85, 247, 35] as Color },
-        { radius: 1000, color: [56, 189, 248, 40] as Color },
-        { radius: 500, color: [0, 245, 212, 45] as Color },
-      ],
-      getPosition: () => [center.lng, center.lat],
-      getRadius: (zone) => zone.radius,
-      getFillColor: (zone) => zone.color,
-      getLineColor: (zone) => [zone.color[0], zone.color[1], zone.color[2], 220],
-      stroked: true,
-      lineWidthMinPixels: 2,
-      pickable: false,
-    })];
-  }
-  if (layer !== "solar" && layer !== "air" && layer !== "pollen" && layer !== "weather" && layer !== "terrain") return [];
-  const points = makeGrid(center, layer, data);
-  if (layer === "terrain") {
-    const elevation = data?.elevation ?? 200;
-    const contours = [-30, -15, 0, 15, 30].map((offset) => ({
-      threshold: elevation + offset,
-      color: [255, 190, 50, 220] as Color,
-      strokeWidth: 2,
-    }));
-    return [new ContourLayer<GridPoint>({
-      id: "terrain",
-      data: points,
-      getPosition: (point) => point.position,
-      getWeight: (point) => point.weight === 0 ? 0.000001 : point.weight,
-      aggregation: "MEAN",
-      cellSize: 150,
-      contours: [
-        { threshold: [elevation - 50, elevation + 50], color: [255, 140, 20, 65] },
-        ...contours,
-      ],
-    })];
-  }
-  if (layer === "weather") {
-    return [new HexagonLayer<GridPoint>({
-      id: "weather",
-      data: points,
-      getPosition: (point) => point.position,
-      getColorWeight: (point) => point.weight,
-      getElevationWeight: (point) => Math.max(1, point.weight + 30),
-      colorAggregation: "MEAN",
-      elevationAggregation: "MEAN",
-      radius: 130,
-      extruded: true,
-      elevationScale: 8,
-      opacity: 0.55,
-      colorRange: [[17, 74, 145], [32, 155, 210], [111, 204, 207], [244, 202, 105], [255, 151, 40]],
-    })];
-  }
-  const colors: Record<"solar" | "air" | "pollen", Color[]> = {
-    solar: [[105, 0, 0], [180, 20, 0], [239, 68, 0], [255, 145, 0], [255, 215, 54], [255, 246, 145]],
-    air: [[0, 220, 220], [0, 145, 255], [48, 86, 255], [132, 42, 235], [235, 30, 200], [255, 80, 230]],
-    pollen: [[0, 120, 35], [0, 205, 55], [86, 245, 20], [173, 255, 32], [232, 255, 44], [255, 245, 100]],
-  };
-  return [new HeatmapLayer<GridPoint>({
-    id: layer,
-    data: points,
-    getPosition: (point) => point.position,
-    getWeight: (point) => point.weight,
-    colorRange: colors[layer],
-    opacity: layer === "solar" ? 0.72 : layer === "air" ? 0.68 : 0.62,
-    radiusPixels: 60,
-    intensity: layer === "solar" ? 1.4 : 1,
-  })];
-}
 
 export function BiomimeticPropertyMap({
   properties,
@@ -193,7 +93,6 @@ export function BiomimeticPropertyMap({
   activeVisualLayer,
   onVisualLayerChange,
   intelligencePoint,
-  intelligenceData,
 }: BiomimeticMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const callbacks = useRef({
@@ -213,8 +112,6 @@ export function BiomimeticPropertyMap({
   const routePlanMarkers = useRef<google.maps.Marker[]>([]);
   const routePlanRequest = useRef(0);
   const [map2d, setMap2d] = useState<google.maps.Map | null>(null);
-  const [overlay, setOverlay] = useState<GoogleMapsOverlay | null>(null);
-  const [mapCenter, setMapCenter] = useState<MapPoint>(DEFAULT_CENTER);
   const [orbitActive, setOrbitActive] = useState(false);
   const [orbitRequest, setOrbitRequest] = useState<(MapPoint & { ts: number }) | null>(null);
   const [localVisualLayer, setLocalVisualLayer] = useState<VisualLayer>(null);
@@ -244,9 +141,7 @@ export function BiomimeticPropertyMap({
     let instance: google.maps.Map | null = null;
     let clickListener: google.maps.MapsEventListener | undefined;
     let visibleListener: google.maps.MapsEventListener | undefined;
-    let centerListener: google.maps.MapsEventListener | undefined;
     let renderingListener: google.maps.MapsEventListener | undefined;
-    let deckOverlay: GoogleMapsOverlay | null = null;
 
     async function initialize() {
       try {
@@ -273,23 +168,10 @@ export function BiomimeticPropertyMap({
           fullscreenControl: true,
           scaleControl: true,
         });
-        deckOverlay = new GoogleMapsOverlay({
-          interleaved: false,
-          layers: [],
-          onError: (error) => {
-            console.error("Błąd renderowania warstwy Deck.gl:", error);
-            callbacks.current.onMapError("Nie udało się wyświetlić warstwy WebGL. Sprawdź obsługę WebGL w przeglądarce.");
-          },
-        });
-        deckOverlay.setMap(instance);
         renderingListener = instance.addListener("renderingtype_changed", () => {
           if (instance?.getRenderingType() === google.maps.RenderingType.RASTER) {
-            callbacks.current.onMapError("Mapa działa w trybie rastrowym: obrót i nachylenie oraz dopasowanie warstw 3D mogą być niedostępne. Sprawdź obsługę WebGL2.");
+            callbacks.current.onMapError("Mapa działa w trybie rastrowym: obrót i nachylenie mogą być niedostępne. Sprawdź obsługę WebGL2.");
           }
-        });
-        centerListener = instance.addListener("idle", () => {
-          const center = instance?.getCenter()?.toJSON();
-          if (center) setMapCenter((current) => current.lat === center.lat && current.lng === center.lng ? current : center);
         });
         const panorama = instance.getStreetView();
         visibleListener = panorama.addListener("visible_changed", () => {
@@ -323,7 +205,6 @@ export function BiomimeticPropertyMap({
           }
         });
         setMap2d(instance);
-        setOverlay(deckOverlay);
         mapRef.current = instance;
       } catch (cause) {
         console.error("Nie udało się załadować Google Maps:", cause);
@@ -336,13 +217,10 @@ export function BiomimeticPropertyMap({
       cancelled = true;
       clickListener?.remove();
       visibleListener?.remove();
-      centerListener?.remove();
       renderingListener?.remove();
-      deckOverlay?.finalize();
       if (instance) google.maps.event.clearInstanceListeners(instance);
       mapRef.current = null;
       setMap2d(null);
-      setOverlay(null);
     };
   }, []);
 
@@ -427,15 +305,28 @@ export function BiomimeticPropertyMap({
     }
   }
 
-  const layerCenter = intelligencePoint ?? routeOrigin ?? mapCenter;
-  const layers = useMemo(
-    () => createLayers(visualLayer, layerCenter, intelligenceData),
-    [visualLayer, layerCenter.lat, layerCenter.lng, intelligenceData],
-  );
-
   useEffect(() => {
-    overlay?.setProps({ layers });
-  }, [overlay, layers]);
+    if (!map2d || (visualLayer !== "solar" && visualLayer !== "terrain" && visualLayer !== "air"
+      && visualLayer !== "pollen" && visualLayer !== "weather" && visualLayer !== "range")) return;
+    const center = intelligencePoint ?? routeOrigin ?? map2d.getCenter()?.toJSON() ?? DEFAULT_CENTER;
+    let overlay: google.maps.GroundOverlay | undefined;
+    try {
+      const bounds = new google.maps.LatLngBounds(
+        { lat: Math.max(-90, center.lat - 0.018), lng: center.lng - 0.028 },
+        { lat: Math.min(90, center.lat + 0.018), lng: center.lng + 0.028 },
+      );
+      const dataUrl = generateLayerDataUrl(visualLayer === "range" ? "isochrone" : visualLayer, center.lat, center.lng);
+      overlay = new google.maps.GroundOverlay(dataUrl, bounds, { opacity: 0.78, clickable: false });
+      overlay.setMap(map2d);
+      map2d.panTo(center);
+      map2d.setZoom(13);
+      return () => overlay?.setMap(null);
+    } catch (cause) {
+      overlay?.setMap(null);
+      console.error("Nie udało się utworzyć warstwy mapy:", cause);
+      callbacks.current.onMapError("Nie udało się wyświetlić warstwy mapy Canvas 2D.");
+    }
+  }, [map2d, visualLayer, intelligencePoint?.lat, intelligencePoint?.lng, routeOrigin?.lat, routeOrigin?.lng]);
 
   useEffect(() => {
     if (!map2d) return;
@@ -588,12 +479,6 @@ export function BiomimeticPropertyMap({
     return () => { cancelled = true; };
   }, [map2d, streetViewTarget]);
 
-  const hasPointData = visualLayer === "solar" ? intelligenceData?.solar?.maxSunshineHoursPerYear != null
-    : visualLayer === "terrain" ? intelligenceData?.elevation != null
-      : visualLayer === "air" ? Number.isFinite(Number.parseFloat(intelligenceData?.airQuality?.aqiDisplay ?? ""))
-        : visualLayer === "pollen" ? intelligenceData?.pollen?.some((item) => item.indexInfo?.value != null) === true
-          : visualLayer === "weather" ? intelligenceData?.weather?.temperature != null : true;
-
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="relative z-0 h-full w-full" aria-label="Interaktywna mapa Google Maps" />
@@ -604,8 +489,7 @@ export function BiomimeticPropertyMap({
       )}
       {["solar", "air", "pollen", "weather", "terrain"].includes(visualLayer ?? "") && (
         <div role="status" className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg bg-slate-950/85 px-3 py-2 text-[10px] text-white">
-          Wizualizacja modelowa wokół punktu, nie rzeczywiste pomiary przestrzenne.
-          {!hasPointData && " Brak danych punktowych: użyto wartości przykładowych."}
+          Wizualizacja modelowa zależna od lokalizacji, nie rzeczywiste pomiary.
         </div>
       )}
       {visualLayer === "range" && (
