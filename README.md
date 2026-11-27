@@ -7,8 +7,12 @@ Ustaw `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` w `.env.local` oraz w środowisku
 wdrożenia i uruchom aplikację ponownie. W projekcie Google Cloud włącz
 rozliczenia, Maps JavaScript API, Places API (New), Routes API i Geocoding API. Klucz
 przeglądarkowy należy ograniczyć do właściwych domen i wymaganych API.
+Domyślny widok Earth 3D wykorzystuje fotorealistyczną mapę Google Maps 3D
+(kanał beta); przełączniki udostępniają także mapy 2D i warstwę rowerową.
+Po wybraniu nieruchomości, punktu lub miejsca można uruchomić przelot 360°.
 Widok 3D oraz Street View zależą od dostępności danych Google w danej
-lokalizacji. Korzystanie z tych usług może generować opłaty.
+lokalizacji. Korzystanie z tych usług może generować opłaty. Nieruchomości bez
+prawidłowych współrzędnych nie są wyświetlane na mapie.
 
 Kliknięcie miejsca na mapie otwiera jego szczegóły w aplikacji; trasy i
 Street View również są wyświetlane na mapie. Trasa wymaga wcześniejszego

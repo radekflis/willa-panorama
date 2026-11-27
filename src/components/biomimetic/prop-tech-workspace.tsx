@@ -89,7 +89,7 @@ function FileDrop({ title, accept, file, onFile }: {
   );
 }
 
-export function PropTechWorkspace({ properties: _properties }: { properties: WorkspaceProperty[] }) {
+export function PropTechWorkspace({ properties }: { properties: WorkspaceProperty[] }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -101,6 +101,9 @@ export function PropTechWorkspace({ properties: _properties }: { properties: Wor
   const [plan, setPlan] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [cameraTarget, setCameraTarget] = useState<MapCameraTarget | null>(null);
+  const [orbitTarget, setOrbitTarget] = useState<(MapPoint & { ts: number }) | null>(null);
+  const orbitSequence = useRef(0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [place, setPlace] = useState<google.maps.places.Place | null>(null);
   const [route, setRoute] = useState<RouteDestination | null>(null);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
@@ -179,6 +182,7 @@ export function PropTechWorkspace({ properties: _properties }: { properties: Wor
       const point = result.results[0]?.geometry.location.toJSON();
       if (!point) throw new Error("Nie znaleziono adresu.");
       setLocation(point);
+      setSelectedId(null);
       setCameraTarget({ ...point, zoom: 17, pitch: 60, ts: Date.now() });
       setMessage(null);
     } catch (error) {
@@ -200,7 +204,9 @@ export function PropTechWorkspace({ properties: _properties }: { properties: Wor
     else setPlan(file);
   }
 
-  const markers = useMemo(() => location ? [{ id: "wybrana", priceShort: "◇", ...location, ecoScore: 0 }] : [], [location]);
+  const markers = useMemo(() => location && !selectedId
+    ? [...properties, { id: "wybrana", priceShort: "◇", ...location, ecoScore: 0 }]
+    : properties, [location, properties, selectedId]);
   const placeLocation = place?.location?.toJSON();
   const intelligencePoint = sellerOpen ? location : placeLocation ?? location;
   const intelligenceKey = intelligencePoint ? `${intelligencePoint.lat},${intelligencePoint.lng}` : null;
@@ -234,16 +240,23 @@ export function PropTechWorkspace({ properties: _properties }: { properties: Wor
       <BiomimeticPropertyMap
         properties={markers}
         hoveredId={null}
-        selectedId={null}
+        selectedId={selectedId}
         onHover={() => {}}
-        onSelect={() => {
-          if (!location) return;
-          setCameraTarget({ ...location, zoom: 17, pitch: 60, ts: Date.now() });
+        onSelect={(id) => {
+          const property = properties.find((item) => item.id === id);
+          if (property) {
+            setLocation({ lat: property.lat, lng: property.lng });
+            setSelectedId(property.id);
+            setPlace(null);
+            setRoute(null);
+            setRouteInfo(null);
+          }
           setMessage("Spacer 3D i odczyt wymiarów nie są jeszcze dostępne.");
         }}
         cameraTarget={cameraTarget}
+        orbitTarget={orbitTarget}
         pickLocationMode={sellerOpen}
-        onPickLocation={(point) => { setLocation(point); setMessage(null); }}
+        onPickLocation={(point) => { setLocation(point); setSelectedId(null); setMessage(null); }}
         onSelectGooglePlace={(selected) => { setPlace(selected); setRoute(null); setRouteInfo(null); }}
         routeOrigin={location ?? undefined}
         routeDestination={route}
@@ -309,6 +322,10 @@ export function PropTechWorkspace({ properties: _properties }: { properties: Wor
               </section>
             )}
             <div className="pointer-events-auto mb-3 flex flex-wrap justify-center gap-2">
+              <button type="button" className="crystal-chip px-3 py-2 text-sm font-semibold" onClick={() => {
+                setStreetView(null);
+                setOrbitTarget({ ...intelligencePoint, ts: ++orbitSequence.current });
+              }}>Przelot 360°</button>
               {intelligenceTabs.map(({ id, label }) => <button key={id} type="button" aria-pressed={activeIntelligenceTab === id} className={`crystal-chip px-3 py-2 text-sm font-semibold ${activeIntelligenceTab === id ? "ring-2 ring-neutral-700" : ""}`} onClick={() => void openIntelligence(id)}>{label}</button>)}
             </div>
           </>

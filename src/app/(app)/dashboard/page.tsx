@@ -76,7 +76,7 @@ export default function DashboardBiomimeticPage() {
         const raw = Array.isArray(data) ? data : data.properties ?? [];
         if (raw.length === 0) return;
 
-        const mapped: WorkspaceProperty[] = raw.map(
+        const mapped: WorkspaceProperty[] = raw.flatMap(
           (
             item: {
               id: string;
@@ -84,27 +84,35 @@ export default function DashboardBiomimeticPage() {
               city?: string;
               address?: string;
               price?: number;
+              pricePln?: number;
               area?: number;
               rooms?: number;
+              lat?: number | string | null;
+              lng?: number | string | null;
             },
             idx: number
           ) => {
-            const numericPrice = Number(item.price) || 1450000;
-            return {
+            if (item.lat == null || item.lng == null || item.lat === "" || item.lng === "") return [];
+            const lat = Number(item.lat);
+            const lng = Number(item.lng);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return [];
+            const numericPrice = Number(item.pricePln ?? item.price);
+            const hasPrice = Number.isFinite(numericPrice) && numericPrice > 0;
+            return [{
               id: item.id,
               title: item.title || "Nieruchomość Willa Panorama",
               location: [item.city || "Wrocław", item.address].filter(Boolean).join(" · "),
-              price: `${numericPrice.toLocaleString("pl-PL")} zł`,
-              priceNumeric: numericPrice,
-              priceShort: formatPriceShort(numericPrice),
+              price: hasPrice ? `${numericPrice.toLocaleString("pl-PL")} zł` : "Cena na zapytanie",
+              priceNumeric: hasPrice ? numericPrice : 0,
+              priceShort: hasPrice ? formatPriceShort(numericPrice) : "Cena na zapytanie",
               area: Number(item.area) || 120,
               rooms: Number(item.rooms) || 4,
               orientation: "Południowy-Zachód",
               ecoScore: 92 + (idx % 7),
               imageUrl: DEMO_PROPERTIES[idx % DEMO_PROPERTIES.length].imageUrl,
-              lat: 51.1079 + (idx % 3) * 0.018 - 0.015,
-              lng: 17.0385 + (idx % 4) * 0.022 - 0.02,
-            };
+              lat,
+              lng,
+            }];
           }
         );
         setProperties(mapped);
