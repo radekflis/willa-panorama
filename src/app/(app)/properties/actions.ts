@@ -51,6 +51,10 @@ export async function createPropertyAction(
   const pricePln = Number(getText(formData, "pricePln"));
   const areaSqm = Number(getText(formData, "areaSqm"));
   const rooms = Number(getText(formData, "rooms"));
+  const latText = getText(formData, "lat");
+  const lngText = getText(formData, "lng");
+  const lat = Number(latText);
+  const lng = Number(lngText);
 
   if (!title || !city || !address) {
     return { error: "Uzupełnij tytuł, miasto i adres." };
@@ -63,6 +67,9 @@ export async function createPropertyAction(
   }
   if (!Number.isSafeInteger(rooms) || rooms < 1 || rooms > 2_147_483_647) {
     return { error: "Liczba pokoi musi być dodatnią liczbą całkowitą." };
+  }
+  if ((latText || lngText) && (!latText || !lngText || !Number.isFinite(lat) || Math.abs(lat) > 90 || !Number.isFinite(lng) || Math.abs(lng) > 180)) {
+    return { error: "Nieprawidłowe współrzędne nieruchomości." };
   }
 
   const user = await getAuthenticatedUser();
@@ -85,6 +92,8 @@ export async function createPropertyAction(
     pricePln,
     areaSqm: areaSqm.toFixed(2),
     rooms,
+    lat: latText ? lat.toFixed(6) : null,
+    lng: lngText ? lng.toFixed(6) : null,
     status: "draft",
   });
 

@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useRef, useState } from "react";
-import { BiomimeticPropertyMap } from "./biomimetic-property-map";
+import React, { useActionState, useRef, useState } from "react";
+import { BiomimeticPropertyMap, type MapPlace, type MapPoint, type PropertyMapHandle } from "./biomimetic-property-map";
 import type { PropertyDetailData } from "./biomimetic-property-detail";
 import { predictSuffix } from "./crystal-prediction";
+import { createPropertyAction } from "@/app/(app)/properties/actions";
+import type { GeoIntelligence } from "@/app/api/geo/intelligence/route";
 
 export interface WorkspaceProperty extends PropertyDetailData {
   priceNumeric: number;
@@ -26,9 +28,44 @@ function localIntent(text: string): Intent {
   return "unknown";
 }
 
+function companyWebsite(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    if (!["http:", "https:"].includes(url.protocol) ||
+      (/(^|\.)google\.[a-z.]+$/.test(host) && (host.startsWith("maps.") || /^\/maps(?:\/|$)/i.test(url.pathname))) ||
+      host === "maps.app.goo.gl" || host === "goo.gl") return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+function SellerForm({ point }: { point: MapPoint }) {
+  const [state, action, pending] = useActionState(createPropertyAction, {});
+  const input = "w-full rounded-lg bg-white/90 px-2 py-1 text-sm text-neutral-900";
+  return <form action={action} className="space-y-2">
+    <p className="text-sm">Współrzędne: {point.lat.toFixed(6)}, {point.lng.toFixed(6)}</p>
+    <input type="hidden" name="lat" value={point.lat} />
+    <input type="hidden" name="lng" value={point.lng} />
+    <label className="block text-sm">Tytuł <input className={input} name="title" required maxLength={160} /></label>
+    <label className="block text-sm">Miasto <input className={input} name="city" required maxLength={100} /></label>
+    <label className="block text-sm">Adres <input className={input} name="address" required maxLength={200} /></label>
+    <label className="block text-sm">Cena (PLN) <input className={input} type="number" name="pricePln" min="1" step="1" required /></label>
+    <label className="block text-sm">Metraż (m²) <input className={input} type="number" name="areaSqm" min="0.01" step="0.01" required /></label>
+    <label className="block text-sm">Pokoje <input className={input} type="number" name="rooms" min="1" step="1" defaultValue="1" required /></label>
+    {state.error && <p role="alert">{state.error}</p>}
+    {state.success && <p role="status">{state.success}</p>}
+    <button className="crystal-chip px-3 py-2 text-sm" disabled={pending} type="submit">{pending ? "Zapisywanie…" : "Zapisz szkic"}</button>
+  </form>;
+}
+
 export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const restoreRef = useRef<HTMLButtonElement>(null);
+  const mapRef = useRef<PropertyMapHandle>(null);
+  const analysisRequest = useRef(0);
   const [query, setQuery] = useState("");
   const [scrollLeft, setScrollLeft] = useState(0);
   const [caretAtEnd, setCaretAtEnd] = useState(true);
@@ -36,6 +73,64 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
   const [mapError, setMapError] = useState<string | null>(null);
   const [minimized, setMinimized] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [point, setPoint] = useState<MapPoint | null>(null);
+  const [approximate, setApproximate] = useState(false);
+  const [place, setPlace] = useState<MapPlace | null>(null);
+  const [placeLoading, setPlaceLoading] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [seller, setSeller] = useState(false);
+  const [analysis, setAnalysis] = useState<GeoIntelligence | null>(null);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
+  const [nearbyBusy, setNearbyBusy] = useState(false);
+
+  function showPoint(next: MapPoint, isApproximate: boolean) {
+    analysisRequest.current++;
+    setPoint(next);
+    setApproximate(isApproximate);
+    setPlace(null);
+    setPlaceLoading(false);
+    setAnalysis(null);
+    setAnalysisBusy(false);
+    setSeller(false);
+    setPanelOpen(true);
+    setMapError(null);
+  }
+
+  async function analyzePoint(selected: MapPoint) {
+    const request = ++analysisRequest.current;
+    setAnalysisBusy(true);
+    setAnalysis(null);
+    setMapError(null);
+    try {
+      const response = await fetch("/api/geo/intelligence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(selected),
+      });
+      if (!response.ok) throw new Error(`Analiza punktu: HTTP ${response.status}`);
+      const data: GeoIntelligence = await response.json();
+      if (request === analysisRequest.current) setAnalysis(data);
+    } catch (error) {
+      console.error("Nie udało się przeanalizować punktu:", error);
+      if (request === analysisRequest.current) setMapError("Nie udało się przeanalizować punktu. Spróbuj ponownie.");
+    } finally {
+      if (request === analysisRequest.current) setAnalysisBusy(false);
+    }
+  }
+
+  async function loadNearby(selected: MapPoint) {
+    setNearbyBusy(true);
+    setMapError(null);
+    try {
+      if (!mapRef.current) throw new Error("Mapa 3D nie jest dostępna.");
+      await mapRef.current.searchNearby(selected);
+    } catch (error) {
+      console.error("Nie udało się pobrać miejsc w pobliżu:", error);
+      setMapError("Nie udało się pobrać miejsc w pobliżu. Sprawdź dostęp do Places API (New).");
+    } finally {
+      setNearbyBusy(false);
+    }
+  }
 
   const ghost = caretAtEnd ? predictSuffix(query) : "";
   const typeMatch = query.match(/^(Sprzedaję|Kupuję)\s+(dom|mieszkanie|działkę|apartament)(?:\s|$)/i);
@@ -91,7 +186,73 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
 
   return (
     <main className="relative h-[100dvh] w-full overflow-hidden bg-neutral-900">
-      <BiomimeticPropertyMap onMapError={setMapError} />
+      <BiomimeticPropertyMap
+        ref={mapRef}
+        onMapError={(error) => { setMapError(error); setPlaceLoading(false); }}
+        onPoint={showPoint}
+        onPlaceLoading={() => {
+          analysisRequest.current++;
+          setPoint(null);
+          setAnalysis(null);
+          setAnalysisBusy(false);
+          setSeller(false);
+          setPlace(null);
+          setMapError(null);
+          setPlaceLoading(true);
+          setPanelOpen(true);
+        }}
+        onPlace={(next) => { setPlace(next); setPlaceLoading(false); }}
+      />
+
+      {panelOpen && <aside aria-label={place ? "Szczegóły miejsca" : "Wybrany punkt"} className="crystal-dialog fixed right-3 top-3 z-30 max-h-[85dvh] w-[min(90vw,360px)] overflow-y-auto p-4">
+        <button type="button" className="crystal-chip float-right px-2 py-1 text-sm" aria-label="Zamknij kartę" onClick={() => { analysisRequest.current++; setPanelOpen(false); }}>×</button>
+        {placeLoading && <p role="status">Ładowanie miejsca…</p>}
+        {place && <>
+          <h2 className="pr-10 text-lg font-semibold">{place.name}</h2>
+          {place.photo && <div className="mt-2">
+            {/* Zdjęcia Places mają dynamiczne adresy i wymagają podania autorów. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={place.photo} alt={place.name} className="h-36 w-full rounded-xl object-cover" />
+            {place.photoAuthors.length > 0 && <p className="text-xs">Zdjęcie: {place.photoAuthors.join(", ")}</p>}
+          </div>}
+          {place.category && <p className="mt-2 text-sm">{place.category}</p>}
+          {place.rating != null && <p className="text-sm">★ {place.rating}{place.ratingCount != null && ` (${place.ratingCount} ocen)`}</p>}
+          {place.address && <p className="mt-1 text-sm">{place.address}</p>}
+          {place.hours.length > 0 && <div className="mt-2 text-xs"><h3 className="font-semibold">Godziny otwarcia</h3>{place.hours.map((line) => <p key={line}>{line}</p>)}</div>}
+          {place.attributions.length > 0 && <p className="mt-2 text-xs">Dane: {place.attributions.join(", ")}</p>}
+          <p className="mt-2 text-xs">Dane miejsc: Google Maps</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {place.phone && <a className="crystal-chip px-3 py-2 text-sm" href={`tel:${place.phone.replace(/[^\d+]/g, "")}`}>Zadzwoń</a>}
+            {companyWebsite(place.website) && <a className="crystal-chip px-3 py-2 text-sm" href={companyWebsite(place.website) ?? undefined} target="_blank" rel="noopener noreferrer">Strona firmy</a>}
+            {place.location && <button className="crystal-chip px-3 py-2 text-sm" type="button" onClick={() => {
+              if (!place.location) return;
+              try { mapRef.current?.orbit(place.location); } catch (error) { console.error(error); setMapError("Nie udało się uruchomić przelotu."); }
+            }}>Przelot 360°</button>}
+          </div>
+        </>}
+        {point && !place && !placeLoading && <>
+          <h2 className="pr-10 text-lg font-semibold">{seller ? "Dodaj nieruchomość" : "Wybrany punkt"}</h2>
+          {approximate && <p className="mt-1 text-xs">Wybrano środek mapy, ponieważ dokładne współrzędne przytrzymania nie są dostępne.</p>}
+          {seller ? <SellerForm key={`${point.lat},${point.lng}`} point={point} /> : <>
+            <p className="mt-1 text-sm">{point.lat.toFixed(6)}, {point.lng.toFixed(6)}</p>
+            <div className="mt-3 flex flex-col items-start gap-2">
+              <button type="button" className="crystal-chip px-3 py-2 text-sm" disabled={nearbyBusy} onClick={() => void loadNearby(point)}>{nearbyBusy ? "Ładowanie miejsc…" : "Pokaż miejsca w pobliżu"}</button>
+              <button type="button" className="crystal-chip px-3 py-2 text-sm" disabled={analysisBusy} onClick={() => void analyzePoint(point)}>{analysisBusy ? "Analizowanie…" : "Analiza punktu (AI)"}</button>
+              <button type="button" className="crystal-chip px-3 py-2 text-sm" onClick={() => setSeller(true)}>Dodaj tu nieruchomość</button>
+            </div>
+            {analysis && <div className="mt-3 space-y-1 text-sm">
+              <p>Wysokość: {analysis.elevation != null ? `${analysis.elevation.toFixed(0)} m n.p.m.` : "brak danych"}</p>
+              <p>Pogoda: {analysis.weather ? [analysis.weather.temperature != null ? `${analysis.weather.temperature}°C` : null, analysis.weather.conditions].filter(Boolean).join(", ") || "brak danych" : "brak danych"}</p>
+              <p>Powietrze: {analysis.airQuality ? [analysis.airQuality.aqiDisplay, analysis.airQuality.category].filter(Boolean).join(" · ") || "brak danych" : "brak danych"}</p>
+              <p>Słońce: {analysis.solar?.maxSunshineHoursPerYear != null ? `${Math.round(analysis.solar.maxSunshineHoursPerYear)} godz./rok` : "brak danych"}</p>
+            </div>}
+          </>}
+        </>}
+        {mapError && <p role="alert" className="mt-3 text-sm">{mapError} <button type="button" className="underline" onClick={() => setMapError(null)}>Zamknij</button></p>}
+      </aside>}
+      {minimized && !panelOpen && mapError && <div className="crystal-dialog fixed left-3 top-3 z-30 max-w-sm p-4 text-sm" role="alert">
+        {mapError} <button type="button" className="underline" onClick={() => setMapError(null)}>Zamknij</button>
+      </div>}
 
       {minimized ? (
         <div className="pointer-events-none fixed bottom-6 left-1/2 z-20 -translate-x-1/2">
@@ -112,8 +273,8 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
               setMinimized(true);
               requestAnimationFrame(() => restoreRef.current?.focus());
             }} aria-label="Minimalizuj okno AI" className="crystal-chip absolute right-3 top-3 z-10 px-2 py-1 text-sm leading-none">−</button>
-            {(mapError || message) && <div className="min-h-0 overflow-y-auto pr-8 text-sm">
-              {mapError && <p role="alert" className="mb-3">{mapError} <button type="button" className="underline" onClick={() => setMapError(null)}>Zamknij</button></p>}
+            {((mapError && !panelOpen) || message) && <div className="min-h-0 overflow-y-auto pr-8 text-sm">
+              {mapError && !panelOpen && <p role="alert" className="mb-3">{mapError} <button type="button" className="underline" onClick={() => setMapError(null)}>Zamknij</button></p>}
               {message && <p role="status" className="mb-3">{message} <button type="button" className="underline" onClick={() => setMessage(null)}>Zamknij</button></p>}
             </div>}
             <form onSubmit={submitQuery} className="flex min-h-[80px] flex-col justify-between gap-2 pt-2">
