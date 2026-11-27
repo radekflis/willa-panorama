@@ -29,7 +29,7 @@ const TYPES = ["dom", "mieszkanie", "działkę", "apartament"];
 const LOCATIONS = ["w województwie pomorskim", "w dolnośląskim", "w mazowieckim", "nad jeziorem", "w górach"];
 
 type Intent = "sell" | "buy" | "area" | "unknown";
-type IntelligenceTab = IntelligenceLayer | "aerial";
+type IntelligenceTab = IntelligenceLayer;
 type IntelligenceState =
   | { key: string; status: "loading" }
   | { key: string; status: "error"; message: string }
@@ -63,7 +63,6 @@ function IntelligenceDetails({ tab, data }: { tab: IntelligenceTab; data: GeoInt
     const timeZone = data.timeZone?.id;
     return <p>{data.timeZone?.name ?? timeZone ?? "Brak danych dla tego punktu."}{timeZone ? ` · ${new Intl.DateTimeFormat("pl-PL", { timeZone, dateStyle: "short", timeStyle: "short" }).format(new Date())}` : ""}</p>;
   }
-  if (tab === "aerial") return <p>{data.aerialView?.videoUrl ? "Odtwarzanie filmu Aerial View." : "Brak filmu Aerial View dla tego punktu. Uruchomiono orbitę 3D."}</p>;
   return <p>Pylenie: {!data.pollen?.length ? "Brak danych dla tego punktu." : data.pollen.map((item) =>
       `${item.displayName ?? item.code ?? "Pyłki"}: ${item.indexInfo?.category ?? (item.indexInfo?.value != null ? item.indexInfo.value : item.inSeason === false ? "poza sezonem" : "brak danych")}`,
     ).join("; ")}</p>;
@@ -118,8 +117,6 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   const [mapError, setMapError] = useState<string | null>(null);
   const [minimized, setMinimized] = useState(false);
   const [cameraTarget, setCameraTarget] = useState<MapCameraTarget | null>(null);
-  const [orbitTarget, setOrbitTarget] = useState<(MapPoint & { ts: number }) | null>(null);
-  const orbitSequence = useRef(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [place, setPlace] = useState<google.maps.places.Place | null>(null);
   const [route, setRoute] = useState<RouteDestination | null>(null);
@@ -131,11 +128,9 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   const [intelligenceTab, setIntelligenceTab] = useState<IntelligenceSelection | null>(null);
   const [intelligence, setIntelligence] = useState<IntelligenceState | null>(null);
   const [activeVisualLayer, setActiveVisualLayer] = useState<VisualLayer>(null);
-  const [terrainRequest, setTerrainRequest] = useState(0);
   const intelligenceRequest = useRef(0);
   const intelligenceCache = useRef(new Map<string, GeoIntelligence>());
   const intelligencePending = useRef(new Map<string, Promise<GeoIntelligence>>());
-  const [aerialVideoUrl, setAerialVideoUrl] = useState<string | null>(null);
 
   const ghost = caretAtEnd ? predictSuffix(query) : "";
   const typeMatch = query.match(/^(Sprzedaję|Kupuję)\s+(dom|mieszkanie|działkę|apartament)(?:\s|$)/i);
@@ -205,6 +200,9 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
       if (!point) throw new Error("Nie znaleziono adresu.");
       setLocation(point);
       setSelectedId(null);
+      intelligenceRequest.current += 1;
+      setIntelligenceTab(null);
+      setActiveVisualLayer(null);
       setCameraTarget({ ...point, zoom: 17, pitch: 60, ts: Date.now() });
       setMessage(null);
     } catch (error) {
@@ -232,7 +230,6 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   const placeLocation = place?.location?.toJSON();
   const selectedIntelligencePoint = sellerOpen ? location : placeLocation ?? location;
   const intelligencePoint = intelligenceTab?.point ?? selectedIntelligencePoint ?? DEFAULT_INTELLIGENCE_POINT;
-  const intelligenceKey = `${intelligencePoint.lat.toFixed(4)},${intelligencePoint.lng.toFixed(4)}`;
   const activeIntelligenceTab = intelligenceTab?.tab ?? null;
   const currentIntelligence = intelligence?.key === intelligenceTab?.key ? intelligence : null;
 
@@ -246,6 +243,7 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(point),
+        signal: AbortSignal.timeout(25000),
       });
       if (!response.ok) {
         const errorBody: unknown = await response.json().catch(() => null);
@@ -271,37 +269,21 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   async function openIntelligence(tab: IntelligenceTab, point: MapPoint = intelligencePoint) {
     const key = `${point.lat.toFixed(4)},${point.lng.toFixed(4)}`;
     setIntelligenceTab({ key, tab, point });
-    if (tab === "terrain") setTerrainRequest((value) => value + 1);
     const requestId = ++intelligenceRequest.current;
     const cachedData = intelligenceCache.current.get(key);
     if (cachedData) {
       setIntelligence({ key, status: "ready", data: cachedData });
-      if (tab === "aerial" && cachedData.aerialView?.videoUrl) setAerialVideoUrl(cachedData.aerialView.videoUrl);
-      else if (tab === "aerial") setOrbitTarget({ ...point, ts: ++orbitSequence.current });
       return;
     }
     setIntelligence({ key, status: "loading" });
     try {
       const data = await fetchIntelligence(point, key);
       if (requestId === intelligenceRequest.current) setIntelligence({ key, status: "ready", data });
-      if (tab === "aerial") {
-        if (data.aerialView?.videoUrl) setAerialVideoUrl(data.aerialView.videoUrl);
-        else setOrbitTarget({ ...point, ts: ++orbitSequence.current });
-      }
     } catch (error) {
       console.error("Nie udało się pobrać analizy przestrzennej:", error);
       const message = error instanceof Error ? error.message : "Nie udało się pobrać danych z Google API.";
       if (requestId === intelligenceRequest.current) setIntelligence({ key, status: "error", message });
-      if (tab === "aerial") setOrbitTarget({ ...point, ts: ++orbitSequence.current });
     }
-  }
-
-  function fallbackToOrbit() {
-    setAerialVideoUrl(null);
-    setIntelligence((current) => current && current.key === intelligenceKey
-      ? { key: current.key, status: "error", message: "Nie udało się odtworzyć filmu Aerial View. Uruchomiono orbitę 3D." }
-      : current);
-    setOrbitTarget({ ...intelligencePoint, ts: ++orbitSequence.current });
   }
 
   return (
@@ -319,13 +301,15 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
             setPlace(null);
             setRoute(null);
             setRouteInfo(null);
+            intelligenceRequest.current += 1;
+            setIntelligenceTab(null);
+            setActiveVisualLayer(null);
           }
           setMessage("Spacer 3D i odczyt wymiarów nie są jeszcze dostępne.");
         }}
         cameraTarget={cameraTarget}
-        orbitTarget={orbitTarget}
         pickLocationMode={sellerOpen}
-        onPickLocation={(point) => { setLocation(point); setSelectedId(null); setMessage(null); }}
+        onPickLocation={(point) => { setLocation(point); setSelectedId(null); setMessage(null); intelligenceRequest.current += 1; setIntelligenceTab(null); setActiveVisualLayer(null); }}
         onSelectGooglePlace={(selected) => { setPlace(selected); setRoute(null); setRouteInfo(null); }}
         routeOrigin={location ?? undefined}
         routeDestination={route}
@@ -335,28 +319,29 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
         onRouteWarnings={setRouteWarnings}
         streetViewTarget={streetView}
         onStreetViewRequest={setStreetView}
-        onCloseStreetView={() => setStreetView(null)}
-        terrainRequest={terrainRequest}
-        onIntelligenceRequest={(tab, point) => void openIntelligence(tab, point)}
-        activeIntelligenceLayer={activeIntelligenceTab}
-        activeVisualLayer={activeVisualLayer}
-        onVisualLayerChange={setActiveVisualLayer}
-        intelligencePoint={intelligenceTab?.point}
-        intelligenceData={currentIntelligence?.status === "ready" ? currentIntelligence.data : null}
-        onAerialRequest={(point) => {
+        onCloseStreetView={() => {
           setStreetView(null);
-          void openIntelligence("aerial", point);
+          setActiveVisualLayer((current) => current === "streetview" ? null : current);
         }}
-        aerialVideoUrl={aerialVideoUrl}
-        onCloseAerialVideo={() => setAerialVideoUrl(null)}
-        onAerialVideoError={fallbackToOrbit}
+        onIntelligenceRequest={(tab, point) => void openIntelligence(tab, point)}
+        activeVisualLayer={activeVisualLayer}
+        onVisualLayerChange={(layer) => {
+          setActiveVisualLayer(layer);
+          if (layer !== "streetview") setStreetView(null);
+          if (intelligenceTab && layer !== intelligenceTab.tab) {
+            intelligenceRequest.current += 1;
+            setIntelligenceTab(null);
+          }
+        }}
+        intelligencePoint={activeVisualLayer === intelligenceTab?.tab ? intelligenceTab?.point : undefined}
+        intelligenceData={currentIntelligence?.status === "ready" ? currentIntelligence.data : null}
       />
 
-      {activeIntelligenceTab && (["weather", "timezone", "aerial"].includes(activeIntelligenceTab) || currentIntelligence?.status !== "ready") && (
-        <section aria-label={intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label ?? "Przelot"} className="pointer-events-auto fixed bottom-[104px] left-3 z-50 max-h-[28dvh] w-[min(360px,calc(100vw-1.5rem))] overflow-y-auto rounded-lg border border-black/10 bg-white/95 p-3 text-xs text-stone-800 shadow-md [text-shadow:none]">
+      {activeIntelligenceTab && (["weather", "timezone"].includes(activeIntelligenceTab) || currentIntelligence?.status !== "ready") && (
+        <section aria-label={intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label} className="pointer-events-auto fixed bottom-[104px] left-3 z-50 max-h-[28dvh] w-[min(360px,calc(100vw-1.5rem))] overflow-y-auto rounded-lg border border-black/10 bg-white/95 p-3 text-xs text-stone-800 shadow-md [text-shadow:none]">
           <div className="mb-2 flex items-center justify-between gap-3">
-            <h2 className="text-[13px] font-semibold">{intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label ?? "Przelot"}</h2>
-            <button type="button" className="rounded px-2 text-base leading-none hover:bg-stone-100" aria-label="Zamknij analizę" onClick={() => setIntelligenceTab(null)}>×</button>
+            <h2 className="text-[13px] font-semibold">{intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label}</h2>
+            <button type="button" className="rounded px-2 text-base leading-none hover:bg-stone-100" aria-label="Zamknij analizę" onClick={() => { intelligenceRequest.current += 1; setIntelligenceTab(null); setActiveVisualLayer(null); }}>×</button>
           </div>
           {currentIntelligence?.status === "ready" ? <IntelligenceDetails tab={activeIntelligenceTab} data={currentIntelligence.data} />
             : currentIntelligence?.status === "error" ? <p role="alert">{currentIntelligence.message}</p>
