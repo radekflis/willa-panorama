@@ -20,7 +20,8 @@ Widok 3D oraz Street View zależą od dostępności danych Google w danej
 lokalizacji. Korzystanie z tych usług może generować opłaty. Nieruchomości bez
 prawidłowych współrzędnych nie są wyświetlane na mapie.
 
-Pogoda pokazuje animowany radar RainViewer (do zoomu 7), teren nakładkę
+Pogoda pokazuje animowany radar RainViewer (do zoomu 7); włączenie radaru
+przy większym przybliżeniu oddala mapę do zoomu 6. Teren pokazuje nakładkę
 OpenTopoMap, a Powietrze obraz satelitarny NASA MODIS (do zoomu 9) sprzed
 dwóch dni. Obraz MODIS nie jest mapą jakości powietrza; jej punktowy indeks
 pochodzi z Google. Pyłki są przedstawiane jako kafelki Google (do zoomu 16).

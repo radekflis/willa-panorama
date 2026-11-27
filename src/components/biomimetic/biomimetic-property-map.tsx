@@ -119,7 +119,7 @@ export function BiomimeticPropertyMap({
   };
   const markers2d = useRef(new Map<string, google.maps.Marker>());
   const mapRef = useRef<google.maps.Map | null>(null);
-  const layersRef = useRef<FuturisticMapLayers | null>(null);
+  const layersManagerRef = useRef<FuturisticMapLayers | null>(null);
   const routePlanner = useRef({ active: false, points: [] as MapPoint[] });
   const routePlanLines = useRef<google.maps.Polyline[]>([]);
   const routePlanMarkers = useRef<google.maps.Marker[]>([]);
@@ -184,7 +184,7 @@ export function BiomimeticPropertyMap({
           fullscreenControl: true,
           scaleControl: true,
         });
-        layersRef.current = new FuturisticMapLayers(instance);
+        layersManagerRef.current = new FuturisticMapLayers(instance);
         callbacks.current.onZoomChange?.(instance.getZoom() ?? 14);
         zoomListener = instance.addListener("zoom_changed", () => {
           const zoom = instance?.getZoom();
@@ -241,8 +241,8 @@ export function BiomimeticPropertyMap({
       visibleListener?.remove();
       renderingListener?.remove();
       zoomListener?.remove();
-      layersRef.current?.clearAll();
-      layersRef.current = null;
+      layersManagerRef.current?.clearAll();
+      layersManagerRef.current = null;
       if (instance) google.maps.event.clearInstanceListeners(instance);
       mapRef.current = null;
       setMap2d(null);
@@ -349,7 +349,7 @@ export function BiomimeticPropertyMap({
   useEffect(() => {
     setRadarTime("");
     setActiveLayer("none");
-    const layers = layersRef.current;
+    const layers = layersManagerRef.current;
     if (!map2d || !layers || (visualLayer !== "weather" && visualLayer !== "terrain" && visualLayer !== "air")) return;
     let cancelled = false;
     setActiveLayer(visualLayer);
