@@ -47,3 +47,28 @@ test("teren, pogoda i zasięg używają właściwych warstw i punktu", () => {
   assert.deepEqual(createLayers("bicycling", center), []);
   assert.deepEqual(createLayers(null, center), []);
 });
+
+test("warstwy cieplne i terenowe mają niezerowe wagi", () => {
+  for (const id of ["solar", "air", "pollen"] as const) {
+    const layer = createLayers(id, center, {
+      ...data,
+      solar: { ...data.solar!, maxSunshineHoursPerYear: 0 },
+      airQuality: { ...data.airQuality!, aqiDisplay: "0" },
+      pollen: [{ indexInfo: { value: 0 } }],
+    })[0];
+    assert.ok(layer instanceof HeatmapLayer);
+    assert.equal(layer.props.radiusPixels, 60);
+    assert.ok(Array.isArray(layer.props.data));
+    assert.equal(typeof layer.props.getWeight, "function");
+    const getWeight = layer.props.getWeight;
+    assert.ok(layer.props.data.every((point: { position: [number, number]; weight: number }) => getWeight(point, { index: 0, data: layer.props.data, target: [] }) > 0));
+  }
+
+  const terrain = createLayers("terrain", center, { ...data, elevation: 0 })[0];
+  assert.ok(terrain instanceof ContourLayer);
+  assert.equal(typeof terrain.props.getWeight, "function");
+  const point = { position: [center.lng, center.lat] as [number, number], weight: 0 };
+  const context = { index: 0, data: [point], target: [] };
+  assert.notEqual(terrain.props.getWeight(point, context), 0);
+  assert.equal(terrain.props.getWeight({ ...point, weight: -10 }, context), -10);
+});

@@ -128,7 +128,7 @@ export function createLayers(layer: VisualLayer, center: MapPoint, data?: GeoInt
       id: "terrain",
       data: points,
       getPosition: (point) => point.position,
-      getWeight: (point) => point.weight,
+      getWeight: (point) => point.weight === 0 ? 0.000001 : point.weight,
       aggregation: "MEAN",
       cellSize: 150,
       contours: [
@@ -165,7 +165,7 @@ export function createLayers(layer: VisualLayer, center: MapPoint, data?: GeoInt
     getWeight: (point) => point.weight,
     colorRange: colors[layer],
     opacity: layer === "solar" ? 0.72 : layer === "air" ? 0.68 : 0.62,
-    radiusPixels: layer === "solar" ? 42 : layer === "air" ? 50 : 55,
+    radiusPixels: 60,
     intensity: layer === "solar" ? 1.4 : 1,
   })];
 }
@@ -274,6 +274,7 @@ export function BiomimeticPropertyMap({
           scaleControl: true,
         });
         deckOverlay = new GoogleMapsOverlay({
+          interleaved: false,
           layers: [],
           onError: (error) => {
             console.error("Błąd renderowania warstwy Deck.gl:", error);
