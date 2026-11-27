@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
-import { generateLayerDataUrl } from "../../lib/map-layer-canvas";
 import {
   AirVent,
   Bike,
@@ -40,6 +39,7 @@ export type RouteDestination = MapPoint & { mode: RouteMode };
 export type RouteInfo = { distance: string; duration: string };
 export type IntelligenceLayer = "solar" | "air" | "pollen" | "weather" | "terrain" | "timezone";
 export type VisualLayer = IntelligenceLayer | "bicycling" | "range" | "routes" | "streetview" | "orbit" | "aerial" | null;
+export type PollenType = "TREE_UPI" | "GRASS_UPI" | "WEED_UPI";
 
 interface BiomimeticMapProps {
   properties: PropertyMarkerData[];
@@ -63,12 +63,21 @@ interface BiomimeticMapProps {
   onIntelligenceRequest?: (tab: IntelligenceLayer, point: MapPoint) => void;
   activeVisualLayer?: VisualLayer;
   onVisualLayerChange?: (layer: VisualLayer) => void;
-  intelligencePoint?: MapPoint;
+  selectedPoint?: MapPoint | null;
+  pollenType?: PollenType;
+  onZoomChange?: (zoom: number) => void;
 }
 
 const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 let loaderConfigured = false;
 const DEFAULT_CENTER = { lat: 50.967, lng: 16.615 };
+
+export function heatmapTileUrl(service: "airquality" | "pollen", type: string, coord: { x: number; y: number }, zoom: number, key: string): string {
+  const count = 2 ** zoom;
+  if (zoom < 0 || zoom > 16 || coord.y < 0 || coord.y >= count) return "";
+  const x = ((coord.x % count) + count) % count;
+  return `https://${service}.googleapis.com/v1/mapTypes/${type}/heatmapTiles/${zoom}/${x}/${coord.y}?key=${encodeURIComponent(key)}`;
+}
 
 export function BiomimeticPropertyMap({
   properties,
@@ -92,17 +101,19 @@ export function BiomimeticPropertyMap({
   onIntelligenceRequest,
   activeVisualLayer,
   onVisualLayerChange,
-  intelligencePoint,
+  selectedPoint,
+  pollenType = "TREE_UPI",
+  onZoomChange,
 }: BiomimeticMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const callbacks = useRef({
     onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onRouteWarnings, onMapError,
-    onStreetViewRequest, onCloseStreetView, pickLocationMode, onPickLocation, onIntelligenceRequest,
+    onStreetViewRequest, onCloseStreetView, pickLocationMode, onPickLocation, onIntelligenceRequest, onZoomChange,
     onRouteStop: (_point: MapPoint) => {},
   });
   callbacks.current = {
     onHover, onSelect, onSelectGooglePlace, onRouteInfo, onRouteError, onRouteWarnings, onMapError,
-    onStreetViewRequest, onCloseStreetView, pickLocationMode, onPickLocation, onIntelligenceRequest,
+    onStreetViewRequest, onCloseStreetView, pickLocationMode, onPickLocation, onIntelligenceRequest, onZoomChange,
     onRouteStop: (point) => { void addRouteStop(point); },
   };
   const markers2d = useRef(new Map<string, google.maps.Marker>());
@@ -142,6 +153,7 @@ export function BiomimeticPropertyMap({
     let clickListener: google.maps.MapsEventListener | undefined;
     let visibleListener: google.maps.MapsEventListener | undefined;
     let renderingListener: google.maps.MapsEventListener | undefined;
+    let zoomListener: google.maps.MapsEventListener | undefined;
 
     async function initialize() {
       try {
@@ -167,6 +179,11 @@ export function BiomimeticPropertyMap({
           rotateControl: true,
           fullscreenControl: true,
           scaleControl: true,
+        });
+        callbacks.current.onZoomChange?.(instance.getZoom() ?? 14);
+        zoomListener = instance.addListener("zoom_changed", () => {
+          const zoom = instance?.getZoom();
+          if (zoom != null) callbacks.current.onZoomChange?.(zoom);
         });
         renderingListener = instance.addListener("renderingtype_changed", () => {
           if (instance?.getRenderingType() === google.maps.RenderingType.RASTER) {
@@ -218,6 +235,7 @@ export function BiomimeticPropertyMap({
       clickListener?.remove();
       visibleListener?.remove();
       renderingListener?.remove();
+      zoomListener?.remove();
       if (instance) google.maps.event.clearInstanceListeners(instance);
       mapRef.current = null;
       setMap2d(null);
@@ -229,7 +247,7 @@ export function BiomimeticPropertyMap({
   }
 
   function getCurrentMapPoint(): MapPoint {
-    return routeOrigin ?? map2d?.getCenter()?.toJSON() ?? DEFAULT_CENTER;
+    return selectedPoint ?? routeOrigin ?? map2d?.getCenter()?.toJSON() ?? DEFAULT_CENTER;
   }
 
   function clearRoutePlan() {
@@ -306,31 +324,49 @@ export function BiomimeticPropertyMap({
   }
 
   useEffect(() => {
-    if (!map2d || (visualLayer !== "solar" && visualLayer !== "terrain" && visualLayer !== "air"
-      && visualLayer !== "pollen" && visualLayer !== "weather" && visualLayer !== "range")) return;
-    const center = intelligencePoint ?? routeOrigin ?? map2d.getCenter()?.toJSON() ?? DEFAULT_CENTER;
-    let overlay: google.maps.GroundOverlay | undefined;
-    try {
-      const bounds = new google.maps.LatLngBounds(
-        { lat: Math.max(-90, center.lat - 0.018), lng: center.lng - 0.028 },
-        { lat: Math.min(90, center.lat + 0.018), lng: center.lng + 0.028 },
-      );
-      const dataUrl = generateLayerDataUrl(visualLayer === "range" ? "isochrone" : visualLayer, center.lat, center.lng);
-      overlay = new google.maps.GroundOverlay(dataUrl, bounds, { opacity: 0.78, clickable: false });
-      overlay.setMap(map2d);
-      map2d.panTo(center);
-      map2d.setZoom(13);
-      return () => overlay?.setMap(null);
-    } catch (cause) {
-      overlay?.setMap(null);
-      console.error("Nie udało się utworzyć warstwy mapy:", cause);
-      callbacks.current.onMapError("Nie udało się wyświetlić warstwy mapy Canvas 2D.");
-    }
-  }, [map2d, visualLayer, intelligencePoint?.lat, intelligencePoint?.lng, routeOrigin?.lat, routeOrigin?.lng]);
+    if (!map2d) return;
+    map2d.overlayMapTypes.clear();
+    if ((visualLayer !== "air" && visualLayer !== "pollen") || !apiKey) return;
+    const service = visualLayer === "air" ? "airquality" : "pollen";
+    const type = visualLayer === "air" ? "UAQI_INDIGO_PERSIAN" : pollenType;
+    const tiles = new google.maps.ImageMapType({
+      tileSize: new google.maps.Size(256, 256),
+      opacity: 0.65,
+      maxZoom: 16,
+      getTileUrl: (coord, zoom) => heatmapTileUrl(service, type, coord, zoom, apiKey),
+    });
+    map2d.overlayMapTypes.push(tiles);
+    return () => { map2d.overlayMapTypes.clear(); };
+  }, [map2d, visualLayer, pollenType]);
+
+  useEffect(() => {
+    if (!map2d || visualLayer !== "range") return;
+    const center = selectedPoint ?? routeOrigin ?? map2d.getCenter()?.toJSON() ?? DEFAULT_CENTER;
+    const rings = [
+      { radius: 1500, color: "#a855f7", label: "15 min" },
+      { radius: 1000, color: "#38bdf8", label: "10 min" },
+      { radius: 500, color: "#00f5d4", label: "5 min" },
+    ];
+    const circles = rings.map(({ radius, color }) => new google.maps.Circle({
+      map: map2d, center, radius, strokeColor: color, strokeOpacity: 0.9,
+      strokeWeight: 2, fillColor: color, fillOpacity: 0.08, clickable: false,
+    }));
+    const labels = rings.map(({ radius, color, label }) => new google.maps.Marker({
+      map: map2d,
+      position: { lat: center.lat + (center.lat > 89 ? -1 : 1) * radius / 111320, lng: center.lng },
+      clickable: false,
+      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 },
+      label: { text: label, color, fontSize: "13px", fontWeight: "bold", className: "map-range-label" },
+    }));
+    return () => {
+      circles.forEach((circle) => circle.setMap(null));
+      labels.forEach((label) => label.setMap(null));
+    };
+  }, [map2d, visualLayer, selectedPoint?.lat, selectedPoint?.lng, routeOrigin?.lat, routeOrigin?.lng]);
 
   useEffect(() => {
     if (!map2d) return;
-    map2d.setMapTypeId(visualLayer === "bicycling" ? "roadmap" : "hybrid");
+    map2d.setMapTypeId(visualLayer === "bicycling" ? "roadmap" : visualLayer === "terrain" ? "terrain" : "hybrid");
     if (visualLayer !== "bicycling") return;
     const bicycle = new google.maps.BicyclingLayer();
     bicycle.setMap(map2d);
@@ -487,15 +523,10 @@ export function BiomimeticPropertyMap({
           {routePlanError ?? `Objazd: ${routePlanInfo?.distance} · ${routePlanInfo?.duration}`}
         </div>
       )}
-      {["solar", "air", "pollen", "weather", "terrain"].includes(visualLayer ?? "") && (
-        <div role="status" className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg bg-slate-950/85 px-3 py-2 text-[10px] text-white">
-          Wizualizacja modelowa zależna od lokalizacji, nie rzeczywiste pomiary.
-        </div>
-      )}
       {visualLayer === "range" && (
         <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-xl border border-cyan-300/30 bg-slate-950/80 px-3 py-2 text-[10px] text-white shadow-[0_0_20px_rgba(56,189,248,.22)] backdrop-blur-md">
           <div className="mb-1 font-semibold tracking-widest">ORIENTACYJNE PIERŚCIENIE — NIE IZOCHRONA</div>
-          <div className="flex gap-3"><span className="text-[#00f5d4]">● 5 min</span><span className="text-[#38bdf8]">● 10 min</span><span className="text-[#a855f7]">● 15 min</span></div>
+          <div className="flex gap-3"><span className="text-[#00f5d4]">● 5 min / 500 m</span><span className="text-[#38bdf8]">● 10 min / 1 km</span><span className="text-[#a855f7]">● 15 min / 1,5 km</span></div>
         </div>
       )}
       <div aria-label="Warstwy Google Maps" className="pointer-events-auto absolute bottom-12 left-3 right-3 z-50 flex w-fit max-w-[calc(100%-1.5rem)] gap-1.5 overflow-x-auto rounded-lg">

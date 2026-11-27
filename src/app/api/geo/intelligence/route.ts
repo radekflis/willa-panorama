@@ -8,7 +8,7 @@ export type GeoIntelligence = {
     maxArrayPanelsCount: number | null;
     maxPowerKw: number | null;
   } | null;
-  airQuality: { aqiDisplay: string | null; category: string | null } | null;
+  airQuality: { aqiDisplay: string | null; category: string | null; dominantPollutant: string | null } | null;
   pollen: Array<{
     code?: string;
     displayName?: string;
@@ -20,7 +20,7 @@ export type GeoIntelligence = {
   aerialView: { state: string | null; videoUrl: string | null } | null;
 };
 
-const ttl = 12 * 60 * 60 * 1000;
+const ttl = 10 * 60 * 1000;
 const cache = new Map<string, { expires: number; data: GeoIntelligence }>();
 const pending = new Map<string, Promise<GeoIntelligence>>();
 
@@ -54,12 +54,12 @@ async function analyze(lat: number, lng: number, key: string): Promise<GeoIntell
           : null,
       } : null;
     }),
-    lookup<{ indexes?: Array<{ aqiDisplay?: string; category?: string }> }>(
+    lookup<{ indexes?: Array<{ aqiDisplay?: string; category?: string; dominantPollutant?: string }> }>(
       "Air Quality", `https://airquality.googleapis.com/v1/currentConditions:lookup?key=${apiKey}`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: { latitude: lat, longitude: lng } }) },
     ).then((data) => {
       const index = data?.indexes?.[0];
-      return index ? { aqiDisplay: index.aqiDisplay ?? null, category: index.category ?? null } : null;
+      return index ? { aqiDisplay: index.aqiDisplay ?? null, category: index.category ?? null, dominantPollutant: index.dominantPollutant ?? null } : null;
     }),
     lookup<{ dailyInfo?: Array<{ pollenTypeInfo?: NonNullable<GeoIntelligence["pollen"]> }> }>(
       "Pollen", `https://pollen.googleapis.com/v1/forecast:lookup?${location}&days=1&languageCode=pl&key=${apiKey}`,

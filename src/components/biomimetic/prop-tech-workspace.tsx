@@ -11,6 +11,7 @@ import {
   type RouteInfo,
   type RouteMode,
   type IntelligenceLayer,
+  type PollenType,
   type VisualLayer,
 } from "./biomimetic-property-map";
 import type { PropertyDetailData } from "./biomimetic-property-detail";
@@ -46,26 +47,33 @@ const intelligenceTabs: Array<{ id: IntelligenceTab; label: string; Icon: typeof
   { id: "timezone", label: "Czas", Icon: Clock3 },
 ];
 
-function IntelligenceDetails({ tab, data }: { tab: IntelligenceTab; data: GeoIntelligence }) {
+export function IntelligenceDetails({ tab, data }: { tab: IntelligenceTab; data: GeoIntelligence }) {
   const number = (value: number | null | undefined, unit: string) =>
     value == null ? "Brak danych dla tego punktu." : `${new Intl.NumberFormat("pl-PL", { maximumFractionDigits: 1 }).format(value)} ${unit}`;
   if (tab === "solar") {
     return data.solar ? <div>
       <p>Powierzchnia dachu: {number(data.solar.areaMeters2, "m²")}</p>
       <p>Nasłonecznienie: {number(data.solar.maxSunshineHoursPerYear, "godz./rok")}</p>
+      <p>Maks. liczba paneli PV: {number(data.solar.maxArrayPanelsCount, "szt.")}</p>
       <p>Potencjał paneli PV: {number(data.solar.maxPowerKw, "kW")}</p>
     </div> : <p>Brak danych dla tego punktu.</p>;
   }
   if (tab === "terrain") return <p>Wysokość n.p.m.: {number(data.elevation, "m")}</p>;
-  if (tab === "air") return <p>Indeks AQI: {data.airQuality ? [data.airQuality.aqiDisplay, data.airQuality.category].filter(Boolean).join(" · ") || "Brak danych dla tego punktu." : "Brak danych dla tego punktu."}</p>;
+  if (tab === "air") return <div><p>Indeks UAQI: {data.airQuality ? [data.airQuality.aqiDisplay, data.airQuality.category].filter(Boolean).join(" · ") || "Brak danych dla tego punktu." : "Brak danych dla tego punktu."}</p>
+    <p>Główny zanieczyszczacz: {data.airQuality?.dominantPollutant?.toUpperCase() ?? "Brak danych"}</p></div>;
   if (tab === "weather") return <p>{data.weather ? [data.weather.temperature == null ? null : number(data.weather.temperature, "°C"), data.weather.conditions].filter(Boolean).join(" · ") || "Brak danych dla tego punktu." : "Brak danych dla tego punktu."}</p>;
   if (tab === "timezone") {
     const timeZone = data.timeZone?.id;
     return <p>{data.timeZone?.name ?? timeZone ?? "Brak danych dla tego punktu."}{timeZone ? ` · ${new Intl.DateTimeFormat("pl-PL", { timeZone, dateStyle: "short", timeStyle: "short" }).format(new Date())}` : ""}</p>;
   }
-  return <p>Pylenie: {!data.pollen?.length ? "Brak danych dla tego punktu." : data.pollen.map((item) =>
-      `${item.displayName ?? item.code ?? "Pyłki"}: ${item.indexInfo?.category ?? (item.indexInfo?.value != null ? item.indexInfo.value : item.inSeason === false ? "poza sezonem" : "brak danych")}`,
-    ).join("; ")}</p>;
+  return <div>{(["TREE", "GRASS", "WEED"] as const).map((code, index) => {
+    const item = data.pollen?.find((pollen) => pollen.code === code);
+    const value = item?.indexInfo?.value;
+    const result = value === 0 && item?.inSeason === false ? "0/5 — poza sezonem pylenia"
+      : value != null ? `${value}/5${item?.indexInfo?.category ? ` · ${item.indexInfo.category}` : ""}`
+      : item?.inSeason === false ? "0/5 — poza sezonem pylenia" : "Brak danych";
+    return <p key={code}>{["Drzewa", "Trawy", "Chwasty"][index]}: {result}</p>;
+  })}</div>;
 }
 
 function localIntent(text: string): Intent {
@@ -128,8 +136,9 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   const [intelligenceTab, setIntelligenceTab] = useState<IntelligenceSelection | null>(null);
   const [intelligence, setIntelligence] = useState<IntelligenceState | null>(null);
   const [activeVisualLayer, setActiveVisualLayer] = useState<VisualLayer>(null);
+  const [pollenType, setPollenType] = useState<PollenType>("TREE_UPI");
+  const [mapZoom, setMapZoom] = useState(14);
   const intelligenceRequest = useRef(0);
-  const intelligenceCache = useRef(new Map<string, GeoIntelligence>());
   const intelligencePending = useRef(new Map<string, Promise<GeoIntelligence>>());
 
   const ghost = caretAtEnd ? predictSuffix(query) : "";
@@ -234,8 +243,6 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   const currentIntelligence = intelligence?.key === intelligenceTab?.key ? intelligence : null;
 
   async function fetchIntelligence(point: MapPoint, key: string): Promise<GeoIntelligence> {
-    const cachedData = intelligenceCache.current.get(key);
-    if (cachedData) return cachedData;
     const existingRequest = intelligencePending.current.get(key);
     if (existingRequest) return existingRequest;
     const pendingRequest = (async () => {
@@ -258,9 +265,7 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
     })();
     intelligencePending.current.set(key, pendingRequest);
     try {
-      const data = await pendingRequest;
-      intelligenceCache.current.set(key, data);
-      return data;
+      return await pendingRequest;
     } finally {
       intelligencePending.current.delete(key);
     }
@@ -270,11 +275,6 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
     const key = `${point.lat.toFixed(4)},${point.lng.toFixed(4)}`;
     setIntelligenceTab({ key, tab, point });
     const requestId = ++intelligenceRequest.current;
-    const cachedData = intelligenceCache.current.get(key);
-    if (cachedData) {
-      setIntelligence({ key, status: "ready", data: cachedData });
-      return;
-    }
     setIntelligence({ key, status: "loading" });
     try {
       const data = await fetchIntelligence(point, key);
@@ -333,18 +333,43 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
             setIntelligenceTab(null);
           }
         }}
-        intelligencePoint={activeVisualLayer === intelligenceTab?.tab ? intelligenceTab?.point : undefined}
+        selectedPoint={selectedIntelligencePoint}
+        pollenType={pollenType}
+        onZoomChange={setMapZoom}
       />
 
-      {activeIntelligenceTab && (["weather", "timezone"].includes(activeIntelligenceTab) || currentIntelligence?.status !== "ready") && (
-        <section aria-label={intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label} className="pointer-events-auto fixed bottom-[104px] left-3 z-50 max-h-[28dvh] w-[min(360px,calc(100vw-1.5rem))] overflow-y-auto rounded-lg border border-black/10 bg-white/95 p-3 text-xs text-stone-800 shadow-md [text-shadow:none]">
+      {activeIntelligenceTab && (
+        <section aria-label={intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label} className="pointer-events-auto fixed left-3 top-3 z-50 max-h-[45dvh] w-[min(360px,calc(100vw-1.5rem))] overflow-y-auto rounded-xl border border-white/40 bg-slate-950/85 p-4 text-xs leading-relaxed text-white shadow-xl backdrop-blur-md [text-shadow:none]">
           <div className="mb-2 flex items-center justify-between gap-3">
             <h2 className="text-[13px] font-semibold">{intelligenceTabs.find((item) => item.id === activeIntelligenceTab)?.label}</h2>
-            <button type="button" className="rounded px-2 text-base leading-none hover:bg-stone-100" aria-label="Zamknij analizę" onClick={() => { intelligenceRequest.current += 1; setIntelligenceTab(null); setActiveVisualLayer(null); }}>×</button>
+            <button type="button" className="rounded px-2 text-base leading-none hover:bg-white/20" aria-label="Zamknij analizę" onClick={() => { intelligenceRequest.current += 1; setIntelligenceTab(null); setActiveVisualLayer(null); }}>×</button>
           </div>
+          {intelligenceTab && <p className="mb-2 text-[10px] text-white/70">Punkt danych: {intelligenceTab.point.lat.toFixed(5)}, {intelligenceTab.point.lng.toFixed(5)}</p>}
           {currentIntelligence?.status === "ready" ? <IntelligenceDetails tab={activeIntelligenceTab} data={currentIntelligence.data} />
             : currentIntelligence?.status === "error" ? <p role="alert">{currentIntelligence.message}</p>
               : <p role="status">Pobieranie danych z Google API...</p>}
+          {(activeIntelligenceTab === "air" || activeIntelligenceTab === "pollen") && (
+            <div className="mt-3 border-t border-white/20 pt-2">
+              {activeIntelligenceTab === "pollen" && (
+                <div className="mb-2 flex gap-1" aria-label="Rodzaj pyłków">
+                  {([["TREE_UPI", "Drzewa"], ["GRASS_UPI", "Trawy"], ["WEED_UPI", "Chwasty"]] as const).map(([type, label]) => (
+                    <button key={type} type="button" aria-pressed={pollenType === type} onClick={() => setPollenType(type)}
+                      className={`rounded px-2 py-1 ${pollenType === type ? "bg-white text-slate-950" : "bg-white/15 hover:bg-white/25"}`}>{label}</button>
+                  ))}
+                </div>
+              )}
+              <p>{activeIntelligenceTab === "air" ? "Uniwersalny indeks jakości powietrza (UAQI)" : "Uniwersalny indeks pyłków (UPI)"}</p>
+              <div className="my-1 h-2 rounded-full" style={{ background: activeIntelligenceTab === "air"
+                ? "linear-gradient(to right, #75008d, #b40c22, #fa5800, #fdf90c, #05b1a0, rgba(5,177,162,0.05))"
+                : "linear-gradient(to right, #eeeeee, #008f55, #77b855, #f5df39, #ef8e29, #d32f2f)" }} />
+              <div className="flex justify-between text-[10px] text-white/80">
+                <span>{activeIntelligenceTab === "air" ? "0 · zła jakość" : "0 · brak"}</span>
+                <span>{activeIntelligenceTab === "air" ? "100 · doskonała" : "5 · bardzo wysokie"}</span>
+              </div>
+              {mapZoom > 16 && <p className="mt-2 text-white/75">Oddal lekko mapę (zoom ≤ 16), aby zobaczyć pełną warstwę kafelków</p>}
+              <p className="mt-2 text-white/70">Kafelki Google zależą od dostępności danych oraz dostępu klucza do API.</p>
+            </div>
+          )}
         </section>
       )}
 

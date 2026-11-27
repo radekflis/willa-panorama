@@ -18,7 +18,7 @@ test("analizuje niezależne usługi, buforuje wyniki i ponawia błędy", async (
     if (url.includes("/elevation/")) return Response.json({ status: "OK", results: [{ elevation: 125 }] });
     if (url.includes("solar.googleapis.com")) return noSolar ? new Response(null, { status: 404 }) : Response.json({ solarPotential: { maxSunshineHoursPerYear: 1200, wholeRoofStats: { areaMeters2: 90 }, maxArrayPanelsCount: 20, panelCapacityWatts: 400 } });
     if (url.includes("airquality.googleapis.com")) {
-      return failAir ? new Response(null, { status: 503 }) : Response.json({ indexes: [{ aqiDisplay: "42", category: "Dobra" }] });
+      return failAir ? new Response(null, { status: 503 }) : Response.json({ indexes: [{ aqiDisplay: "42", category: "Dobra", dominantPollutant: "pm25" }] });
     }
     if (url.includes("pollen.googleapis.com")) return Response.json({ dailyInfo: [{ pollenTypeInfo: [{ displayName: "Trawy", indexInfo: { category: "Niski" } }] }] });
     if (url.includes("weather.googleapis.com")) return Response.json({ temperature: { degrees: 18 }, weatherCondition: { description: { text: "Słonecznie" } } });
@@ -42,7 +42,7 @@ test("analizuje niezależne usługi, buforuje wyniki i ponawia błędy", async (
     assert.deepEqual(data, {
       elevation: 125,
       solar: { maxSunshineHoursPerYear: 1200, areaMeters2: 90, maxArrayPanelsCount: 20, maxPowerKw: 8 },
-      airQuality: { aqiDisplay: "42", category: "Dobra" },
+      airQuality: { aqiDisplay: "42", category: "Dobra", dominantPollutant: "pm25" },
       pollen: [{ displayName: "Trawy", indexInfo: { category: "Niski" } }],
       weather: { temperature: 18, conditions: "Słonecznie" },
       timeZone: { id: "Europe/Warsaw", name: "Central European Standard Time" },
@@ -56,7 +56,7 @@ test("analizuje niezależne usługi, buforuje wyniki i ponawia błędy", async (
 
     await POST(request(51.12342, 17.12342));
     assert.equal(calls.length, 8);
-    now += 12 * 60 * 60 * 1000;
+    now += 10 * 60 * 1000;
     await POST(request(51.12342, 17.12342));
     assert.equal(calls.length, 16);
 
