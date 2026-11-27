@@ -1,15 +1,5 @@
 @import "tailwindcss";
 
-.gm-style img[src*="rainviewer"],
-.gm-style img[src*="opentopomap"] {
-  filter: contrast(1.25) saturate(1.4);
-  mix-blend-mode: screen;
-}
-
-.map-range-label {
-  text-shadow: 0 1px 3px #000, 0 0 4px #000;
-}
-
 .crystal-dialog {
   background: rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(22px) saturate(140%);
