@@ -21,6 +21,7 @@ export type MapPlace = {
 export type PropertyMapHandle = {
   searchNearby: (point: MapPoint) => Promise<void>;
   orbit: (point: MapPoint) => void;
+  getCenter: () => MapPoint;
 };
 
 const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -64,6 +65,10 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
     orbit: (point) => {
       if (!controls.current) throw new Error("Mapa 3D nie jest dostępna.");
       controls.current.orbit(point);
+    },
+    getCenter: () => {
+      if (!controls.current) throw new Error("Mapa 3D nie jest dostępna.");
+      return controls.current.getCenter();
     },
   }), []);
 
@@ -112,7 +117,6 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
         };
         const selectPoint = (point: MapPoint, approximate: boolean) => {
           selection++;
-          search++;
           pointMarker?.remove();
           pointMarker = new Marker3DInteractiveElement({
             position: point, altitudeMode: "RELATIVE_TO_GROUND", extruded: true,
@@ -172,7 +176,7 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
           const request = ++search;
           const { Place } = await google.maps.importLibrary("places");
           const { places } = await Place.searchNearby({
-            fields: ["id", "displayName", "location", "rating", "primaryType"],
+            fields: ["id", "displayName", "location", "rating", "primaryType", "types"],
             locationRestriction: { center: point, radius: 1500 },
             maxResultCount: 20,
             includedTypes: ["restaurant", "cafe", "school", "pharmacy", "supermarket", "park", "tourist_attraction"],
@@ -183,9 +187,10 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
           nearbyMarkers = places.flatMap((place) => {
             if (!place.id || !place.location) return [];
             const label = place.displayName || "Miejsce";
-            const style = PIN_STYLES[place.primaryType ?? ""] ?? { background: "#64748b", glyph: "M" };
+            const type = [place.primaryType, ...(place.types ?? [])].find((value) => value && PIN_STYLES[value]);
+            const style = (type && PIN_STYLES[type]) || { background: "#64748b", glyph: "M" };
             const marker = new Marker3DInteractiveElement({
-              position: place.location,
+              position: { lat: place.location.lat(), lng: place.location.lng(), altitude: 50 },
               altitudeMode: "RELATIVE_TO_GROUND",
               extruded: true,
               label,
@@ -213,6 +218,11 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
         controls.current = {
           searchNearby,
           orbit: (point) => element.flyCameraAround({ camera: { center: point, tilt: 60, range: 700 }, durationMillis: 20000, repeatCount: 1 }),
+          getCenter: () => {
+            const center = element.center;
+            if (!center) throw new Error("Nie udało się ustalić środka mapy.");
+            return { lat: center.lat, lng: center.lng };
+          },
         };
 
         const onMapClick = (event: google.maps.maps3d.LocationClickEvent | google.maps.maps3d.PlaceClickEvent) => {

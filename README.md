@@ -27,3 +27,13 @@ lokalizacji, a zapytania mogą generować opłaty. Wyniki są przechowywane prze
 10 minut w pamięci danego procesu serwera; błędy usług nie są buforowane.
 Endpoint analizy jest publiczny, dlatego przed publicznym wdrożeniem należy
 ograniczyć dostęp lub liczbę wywołań oraz ustawić limity kosztów Google Cloud.
+
+Liczniki w promieniu 1 km korzystają z Places Aggregate API, a czas i dystans
+do miejsc z Routes API. Włącz obie usługi dla klucza serwerowego; każde
+wybranie punktu lub miejsca wykonuje pięć zapytań o liczniki, a wybór miejsca
+także trzy zapytania o trasy. Punktem początkowym trasy jest ostatni wybrany
+punkt albo aktualny środek mapy. Przytrzymanie wybiera przybliżony środek,
+nie współrzędne palca. Publiczne endpointy `/api/geo/insights` i
+`/api/geo/route` wymagają przed wdrożeniem ograniczenia dostępu lub liczby
+wywołań oraz limitów kosztów Google Cloud. Dostępność tras i danych zależy od
+lokalizacji i konfiguracji usług.

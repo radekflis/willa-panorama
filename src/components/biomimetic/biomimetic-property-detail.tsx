@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { Sun, Sunrise, Sunset, Compass, Calendar, X } from "lucide-react";
+import { NearbyInsights } from "./nearby-insights";
 
 export interface PropertyDetailData {
   id: string;
@@ -13,6 +14,8 @@ export interface PropertyDetailData {
   rooms: number;
   orientation?: string;
   ecoScore?: number;
+  lat?: number;
+  lng?: number;
 }
 
 export function BiomimeticPropertyDetail({
@@ -136,6 +139,7 @@ export function BiomimeticPropertyDetail({
               {formatTime(hour)}
             </span>
           </div>
+          {property.lat != null && property.lng != null && <NearbyInsights lat={property.lat} lng={property.lng} />}
         </div>
 
         <div className="flex flex-col justify-between rounded-[28px] bg-white/75 dark:bg-emerald-950/45 p-5 border border-stone-200/60 dark:border-emerald-800/30">

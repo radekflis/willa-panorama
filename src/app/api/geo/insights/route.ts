@@ -10,21 +10,15 @@ export type GeoInsights = {
 
 type InsightName = keyof GeoInsights;
 
-type InsightResponse = {
-  placeInsights?: Array<{
-    placeCount?: number | string;
-    placesCount?: number | string;
-    value?: number | string;
-  }>;
-};
-
-function insightCount(data: InsightResponse): number {
-  const raw = data.placeInsights?.[0]?.placeCount
-    ?? data.placeInsights?.[0]?.placesCount
-    ?? data.placeInsights?.[0]?.value
-    ?? 0;
-  const count = Number(raw);
-  return Number.isFinite(count) ? count : 0;
+function insightCount(data: unknown): number {
+  if (!data || typeof data !== "object" || !("count" in data) ||
+      (typeof data.count !== "string" && typeof data.count !== "number") ||
+      !/^\d+$/.test(String(data.count))) {
+    throw new Error("Nieprawidłowa odpowiedź Places Aggregate.");
+  }
+  const count = Number(data.count);
+  if (!Number.isSafeInteger(count)) throw new Error("Nieprawidłowa liczba miejsc.");
+  return count;
 }
 
 export async function POST(request: Request) {
@@ -62,7 +56,7 @@ export async function POST(request: Request) {
         filter: {
           locationFilter: {
             circle: {
-              center: { latitude: body.lat, longitude: body.lng },
+              latLng: { latitude: body.lat, longitude: body.lng },
               radius: 1000,
             },
           },
@@ -73,14 +67,19 @@ export async function POST(request: Request) {
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return insightCount(await response.json() as InsightResponse);
+    return insightCount(await response.json());
   }));
 
   const data: GeoInsights = { restaurants: 0, schools: 0, health: 0, shops: 0, parks: 0 };
+  let failed = false;
   results.forEach((result, index) => {
     const category = categories[index];
     if (result.status === "fulfilled") data[category.name] = result.value;
-    else console.error(`Places Aggregate: ${category.name} (${result.reason instanceof Error ? result.reason.message : "nieznany błąd"}).`);
+    else {
+      failed = true;
+      console.error(`Places Aggregate: ${category.name} (${result.reason instanceof Error ? result.reason.message : "nieznany błąd"}).`);
+    }
   });
+  if (failed) return NextResponse.json({ error: "Nie udało się pobrać wszystkich statystyk infrastruktury." }, { status: 502 });
   return NextResponse.json(data);
 }

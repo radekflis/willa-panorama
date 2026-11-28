@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   }
   if (!body || typeof body !== "object" || !("origin" in body) || !("destination" in body) || !("mode" in body)
       || !validPoint(body.origin) || !validPoint(body.destination)
-      || !["DRIVE", "WALK", "BICYCLE"].includes(String(body.mode))) {
+      || (body.mode !== "DRIVE" && body.mode !== "WALK" && body.mode !== "BICYCLE")) {
     return NextResponse.json({ error: "Nieprawidłowa trasa." }, { status: 400 });
   }
 
@@ -33,30 +33,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Wyznaczanie trasy jest niedostępne." }, { status: 503 });
   }
 
-  const mode = body.mode as RouteMode;
+  const mode = body.mode;
   const waypoint = (point: Point) => ({ location: { latLng: { latitude: point.lat, longitude: point.lng } } });
-  const response = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": key,
-      "X-Goog-FieldMask": "routes.duration,routes.distanceMeters",
-    },
-    body: JSON.stringify({ origin: waypoint(body.origin), destination: waypoint(body.destination), travelMode: mode }),
-    cache: "no-store",
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) {
-    console.error(`Routes API (${mode}): HTTP ${response.status}.`);
+  try {
+    const response = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": "routes.duration,routes.distanceMeters",
+      },
+      body: JSON.stringify({ origin: waypoint(body.origin), destination: waypoint(body.destination), travelMode: mode }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const data = await response.json() as RoutesResponse;
+    const route = data.routes?.[0];
+    if (!route) return NextResponse.json({ error: "Nie znaleziono trasy." }, { status: 404 });
+    if (typeof route.distanceMeters !== "number" || !Number.isFinite(route.distanceMeters) || route.distanceMeters < 0 ||
+        typeof route.duration !== "string" || !/^\d+(?:\.\d+)?s$/.test(route.duration)) {
+      throw new Error("Nieprawidłowe dane trasy.");
+    }
+    const seconds = Number(route.duration.slice(0, -1));
+    if (!Number.isFinite(seconds)) throw new Error("Nieprawidłowy czas trasy.");
+    return NextResponse.json({ distanceMeters: route.distanceMeters, durationSeconds: seconds } satisfies RouteResult);
+  } catch (error) {
+    console.error(`Routes API (${mode}):`, error);
     return NextResponse.json({ error: "Nie udało się wyznaczyć trasy." }, { status: 502 });
   }
-
-  const data = await response.json() as RoutesResponse;
-  const route = data.routes?.[0];
-  if (!route || typeof route.distanceMeters !== "number" || !route.duration) {
-    return NextResponse.json({ error: "Nie znaleziono trasy." }, { status: 404 });
-  }
-  const seconds = Number.parseFloat(route.duration);
-  if (!Number.isFinite(seconds)) return NextResponse.json({ error: "Nieprawidłowe dane trasy." }, { status: 502 });
-  return NextResponse.json({ distanceMeters: route.distanceMeters, durationSeconds: seconds } satisfies RouteResult);
 }

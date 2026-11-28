@@ -2,11 +2,11 @@
 
 import React, { useActionState, useRef, useState } from "react";
 import { BiomimeticPropertyMap, type MapPlace, type MapPoint, type PropertyMapHandle } from "./biomimetic-property-map";
+import { NearbyInsights } from "./nearby-insights";
 import type { PropertyDetailData } from "./biomimetic-property-detail";
 import { predictSuffix } from "./crystal-prediction";
 import { createPropertyAction } from "@/app/(app)/properties/actions";
 import type { GeoIntelligence } from "@/app/api/geo/intelligence/route";
-import type { GeoInsights } from "@/app/api/geo/insights/route";
 import type { RouteMode, RouteResult } from "@/app/api/geo/route/route";
 
 export interface WorkspaceProperty extends PropertyDetailData {
@@ -19,7 +19,6 @@ export interface WorkspaceProperty extends PropertyDetailData {
 
 const TYPES = ["dom", "mieszkanie", "działkę", "apartament"];
 const LOCATIONS = ["w województwie pomorskim", "w dolnośląskim", "w mazowieckim", "nad jeziorem", "w górach"];
-const MAP_CENTER = { lat: 50.967, lng: 16.615 };
 const ROUTE_MODES: Array<{ value: RouteMode; label: string; travelLabel: string }> = [
   { value: "DRIVE", label: "Auto", travelLabel: "autem" },
   { value: "WALK", label: "Pieszo", travelLabel: "pieszo" },
@@ -69,14 +68,14 @@ function SellerForm({ point }: { point: MapPoint }) {
   </form>;
 }
 
-export function PropTechWorkspace({ properties }: { properties: WorkspaceProperty[] }) {
+export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const restoreRef = useRef<HTMLButtonElement>(null);
   const mapRef = useRef<PropertyMapHandle>(null);
   const analysisRequest = useRef(0);
-  const insightsRequest = useRef(0);
   const routeRequest = useRef(0);
   const selectedOrigin = useRef<MapPoint | null>(null);
+  const placeOrigin = useRef<MapPoint | null>(null);
   const [query, setQuery] = useState("");
   const [scrollLeft, setScrollLeft] = useState(0);
   const [caretAtEnd, setCaretAtEnd] = useState(true);
@@ -93,14 +92,13 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
   const [analysis, setAnalysis] = useState<GeoIntelligence | null>(null);
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const [nearbyBusy, setNearbyBusy] = useState(false);
-  const [insights, setInsights] = useState<GeoInsights | null>(null);
-  const [insightsBusy, setInsightsBusy] = useState(false);
   const [routes, setRoutes] = useState<Partial<Record<RouteMode, RouteResult>>>({});
   const [routeBusy, setRouteBusy] = useState(false);
   const [routeMode, setRouteMode] = useState<RouteMode>("DRIVE");
 
   function showPoint(next: MapPoint, isApproximate: boolean) {
     analysisRequest.current++;
+    routeRequest.current++;
     selectedOrigin.current = next;
     setPoint(next);
     setApproximate(isApproximate);
@@ -113,34 +111,10 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
     setRouteBusy(false);
     setPanelOpen(true);
     setMapError(null);
-    void loadInsights(next);
   }
 
-  async function loadInsights(selected: MapPoint) {
-    const request = ++insightsRequest.current;
-    setInsightsBusy(true);
-    setInsights(null);
-    try {
-      const response = await fetch("/api/geo/insights", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(selected),
-      });
-      if (!response.ok) throw new Error(`Insights: HTTP ${response.status}`);
-      const data: GeoInsights = await response.json();
-      if (request === insightsRequest.current) setInsights(data);
-    } catch (error) {
-      console.error("Nie udało się pobrać statystyk infrastruktury:", error);
-      if (request === insightsRequest.current) setMapError("Nie udało się pobrać statystyk infrastruktury w promieniu 1 km.");
-    } finally {
-      if (request === insightsRequest.current) setInsightsBusy(false);
-    }
-  }
-
-  async function loadRoutes(destination: MapPoint) {
+  async function loadRoutes(origin: MapPoint, destination: MapPoint) {
     const request = ++routeRequest.current;
-    const property = properties[0];
-    const origin = selectedOrigin.current ?? (property ? { lat: property.lat, lng: property.lng } : MAP_CENTER);
     setRouteBusy(true);
     setRoutes({});
     const results = await Promise.allSettled(ROUTE_MODES.map(async ({ value }) => {
@@ -261,14 +235,17 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
         onPlaceLoading={() => {
           analysisRequest.current++;
           routeRequest.current++;
-          insightsRequest.current++;
+          try {
+            placeOrigin.current = selectedOrigin.current ?? mapRef.current?.getCenter() ?? null;
+          } catch (error) {
+            console.error("Nie udało się ustalić punktu początkowego trasy:", error);
+            placeOrigin.current = null;
+          }
           setPoint(null);
           setAnalysis(null);
           setAnalysisBusy(false);
           setSeller(false);
           setPlace(null);
-          setInsights(null);
-          setInsightsBusy(false);
           setRoutes({});
           setRouteBusy(false);
           setMapError(null);
@@ -279,8 +256,10 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
           setPlace(next);
           setPlaceLoading(false);
           if (next.location) {
-            void loadInsights(next.location);
-            void loadRoutes(next.location);
+            if (placeOrigin.current) void loadRoutes(placeOrigin.current, next.location);
+            else setMapError("Nie udało się ustalić punktu początkowego trasy.");
+          } else {
+            setMapError("Brak współrzędnych miejsca; nie można wyznaczyć trasy.");
           }
         }}
       />
@@ -347,13 +326,7 @@ export function PropTechWorkspace({ properties }: { properties: WorkspacePropert
             </div>}
           </>}
         </>}
-        {insightsBusy && <p role="status" className="mt-3 text-sm">Liczenie infrastruktury w promieniu 1 km…</p>}
-        {insights && <section className="mt-3 text-sm">
-          <h3 className="font-semibold">W promieniu 1 km</h3>
-          <p className="mt-1">
-            {insights.restaurants} restauracji · {insights.schools} szkół · {insights.health} aptek · {insights.shops} sklepów · {insights.parks} parków
-          </p>
-        </section>}
+        {place?.location ? <NearbyInsights {...place.location} /> : point && <NearbyInsights {...point} />}
         {mapError && <p role="alert" className="mt-3 text-sm">{mapError} <button type="button" className="underline" onClick={() => setMapError(null)}>Zamknij</button></p>}
       </aside>}
       {minimized && !panelOpen && mapError && <div className="crystal-dialog fixed left-3 top-3 z-30 max-w-sm p-4 text-sm" role="alert">
