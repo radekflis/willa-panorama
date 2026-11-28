@@ -1,11 +1,9 @@
 "use client";
 
-import React, { useActionState, useRef, useState } from "react";
-import { BiomimeticPropertyMap, type MapPlace, type MapPoint, type PropertyMapHandle } from "./biomimetic-property-map";
-import { NearbyInsights } from "./nearby-insights";
+import React, { useRef, useState } from "react";
+import { BiomimeticPropertyMap, type MapPlace, type MapPoint, type NearbyPlace, type PropertyMapHandle } from "./biomimetic-property-map";
 import type { PropertyDetailData } from "./biomimetic-property-detail";
 import { predictSuffix } from "./crystal-prediction";
-import { createPropertyAction } from "@/app/(app)/properties/actions";
 import type { GeoIntelligence } from "@/app/api/geo/intelligence/route";
 import type { RouteMode, RouteResult } from "@/app/api/geo/route/route";
 
@@ -49,28 +47,18 @@ function companyWebsite(value: string | null): string | null {
   }
 }
 
-function SellerForm({ point }: { point: MapPoint }) {
-  const [state, action, pending] = useActionState(createPropertyAction, {});
-  const input = "w-full rounded-lg bg-white/90 px-2 py-1 text-sm text-neutral-900";
-  return <form action={action} className="space-y-2">
-    <p className="text-sm">Współrzędne: {point.lat.toFixed(6)}, {point.lng.toFixed(6)}</p>
-    <input type="hidden" name="lat" value={point.lat} />
-    <input type="hidden" name="lng" value={point.lng} />
-    <label className="block text-sm">Tytuł <input className={input} name="title" required maxLength={160} /></label>
-    <label className="block text-sm">Miasto <input className={input} name="city" required maxLength={100} /></label>
-    <label className="block text-sm">Adres <input className={input} name="address" required maxLength={200} /></label>
-    <label className="block text-sm">Cena (PLN) <input className={input} type="number" name="pricePln" min="1" step="1" required /></label>
-    <label className="block text-sm">Metraż (m²) <input className={input} type="number" name="areaSqm" min="0.01" step="0.01" required /></label>
-    <label className="block text-sm">Pokoje <input className={input} type="number" name="rooms" min="1" step="1" defaultValue="1" required /></label>
-    {state.error && <p role="alert">{state.error}</p>}
-    {state.success && <p role="status">{state.success}</p>}
-    <button className="crystal-chip px-3 py-2 text-sm" disabled={pending} type="submit">{pending ? "Zapisywanie…" : "Zapisz szkic"}</button>
-  </form>;
+function distanceKm(origin: MapPoint, destination: MapPoint): number {
+  const radians = Math.PI / 180;
+  const lat = (destination.lat - origin.lat) * radians;
+  const lng = (destination.lng - origin.lng) * radians;
+  const a = Math.sin(lat / 2) ** 2 + Math.cos(origin.lat * radians) * Math.cos(destination.lat * radians) * Math.sin(lng / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(Math.min(1, a)));
 }
 
 export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const restoreRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const mapRef = useRef<PropertyMapHandle>(null);
   const analysisRequest = useRef(0);
   const routeRequest = useRef(0);
@@ -88,10 +76,9 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
   const [place, setPlace] = useState<MapPlace | null>(null);
   const [placeLoading, setPlaceLoading] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [seller, setSeller] = useState(false);
   const [analysis, setAnalysis] = useState<GeoIntelligence | null>(null);
   const [analysisBusy, setAnalysisBusy] = useState(false);
-  const [nearbyBusy, setNearbyBusy] = useState(false);
+  const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[] | null>(null);
   const [routes, setRoutes] = useState<Partial<Record<RouteMode, RouteResult>>>({});
   const [routeBusy, setRouteBusy] = useState(false);
   const [routeMode, setRouteMode] = useState<RouteMode>("DRIVE");
@@ -99,6 +86,7 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
   function showPoint(next: MapPoint, isApproximate: boolean) {
     analysisRequest.current++;
     routeRequest.current++;
+    panelRef.current?.scrollTo({ top: 0 });
     selectedOrigin.current = next;
     setPoint(next);
     setApproximate(isApproximate);
@@ -106,7 +94,7 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
     setPlaceLoading(false);
     setAnalysis(null);
     setAnalysisBusy(false);
-    setSeller(false);
+    setNearbyPlaces(null);
     setRoutes({});
     setRouteBusy(false);
     setPanelOpen(true);
@@ -141,37 +129,38 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
     const request = ++analysisRequest.current;
     setAnalysisBusy(true);
     setAnalysis(null);
+    setNearbyPlaces(null);
     setMapError(null);
-    try {
-      const response = await fetch("/api/geo/intelligence", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(selected),
-      });
-      if (!response.ok) throw new Error(`Analiza punktu: HTTP ${response.status}`);
-      const data: GeoIntelligence = await response.json();
-      if (request === analysisRequest.current) setAnalysis(data);
-    } catch (error) {
-      console.error("Nie udało się przeanalizować punktu:", error);
-      if (request === analysisRequest.current) setMapError("Nie udało się przeanalizować punktu. Spróbuj ponownie.");
-    } finally {
-      if (request === analysisRequest.current) setAnalysisBusy(false);
+    const [intelligence, nearby] = await Promise.allSettled([
+      (async () => {
+        const response = await fetch("/api/geo/intelligence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(selected),
+        });
+        if (!response.ok) throw new Error(`Analiza punktu: HTTP ${response.status}`);
+        return await response.json() as GeoIntelligence;
+      })(),
+      (async () => {
+        if (!mapRef.current) throw new Error("Mapa 3D nie jest dostępna.");
+        return mapRef.current.searchNearby(selected);
+      })(),
+    ]);
+    if (request !== analysisRequest.current) return;
+    const errors: string[] = [];
+    if (intelligence.status === "fulfilled") setAnalysis(intelligence.value);
+    else {
+      console.error("Nie udało się przeanalizować punktu:", intelligence.reason);
+      errors.push("Nie udało się przeanalizować punktu.");
     }
-  }
-
-  async function loadNearby(selected: MapPoint) {
-    setNearbyBusy(true);
-    setMapError(null);
-    try {
-      if (!mapRef.current) throw new Error("Mapa 3D nie jest dostępna.");
-      await mapRef.current.searchNearby(selected);
-    } catch (error) {
-      console.error("Nie udało się pobrać miejsc w pobliżu:", error);
-      const detail = error instanceof Error ? error.message : String(error);
-      setMapError(`Diagnostyka Places: ${detail}`);
-    } finally {
-      setNearbyBusy(false);
+    if (nearby.status === "fulfilled") setNearbyPlaces(nearby.value);
+    else {
+      console.error("Nie udało się pobrać miejsc w pobliżu:", nearby.reason);
+      const detail = nearby.reason instanceof Error ? nearby.reason.message : String(nearby.reason);
+      errors.push(`Diagnostyka Places: ${detail}`);
     }
+    if (errors.length) setMapError(errors.join(" "));
+    setAnalysisBusy(false);
   }
 
   const ghost = caretAtEnd ? predictSuffix(query) : "";
@@ -235,16 +224,14 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
         onPlaceLoading={() => {
           analysisRequest.current++;
           routeRequest.current++;
+          panelRef.current?.scrollTo({ top: 0 });
           try {
             placeOrigin.current = selectedOrigin.current ?? mapRef.current?.getCenter() ?? null;
           } catch (error) {
             console.error("Nie udało się ustalić punktu początkowego trasy:", error);
             placeOrigin.current = null;
           }
-          setPoint(null);
-          setAnalysis(null);
           setAnalysisBusy(false);
-          setSeller(false);
           setPlace(null);
           setRoutes({});
           setRouteBusy(false);
@@ -264,10 +251,18 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
         }}
       />
 
-      {panelOpen && <aside aria-label={place ? "Szczegóły miejsca" : "Wybrany punkt"} className="crystal-dialog fixed right-3 top-3 z-30 max-h-[85dvh] w-[min(90vw,360px)] overflow-y-auto p-4">
+      {panelOpen && <aside ref={panelRef} aria-label={place ? "Szczegóły miejsca" : "Wybrany punkt"} className="crystal-dialog fixed right-3 top-3 z-30 max-h-[240px] w-[86vw] max-w-[345px] overflow-y-auto rounded-[24px] p-3.5">
         <button type="button" className="crystal-chip float-right px-2 py-1 text-sm" aria-label="Zamknij kartę" onClick={() => { analysisRequest.current++; setPanelOpen(false); }}>×</button>
         {placeLoading && <p role="status">Ładowanie miejsca…</p>}
         {place && <>
+          {point && <button type="button" className="crystal-chip mb-2 px-2 py-1 text-xs" onClick={() => {
+            routeRequest.current++;
+            panelRef.current?.scrollTo({ top: 0 });
+            setPlace(null);
+            setRoutes({});
+            setRouteBusy(false);
+            setMapError(null);
+          }}>← Wróć do punktu</button>}
           <h2 className="pr-10 text-lg font-semibold">{place.name}</h2>
           {place.photo && <div className="mt-2">
             {/* Zdjęcia Places mają dynamiczne adresy i wymagają podania autorów. */}
@@ -309,24 +304,37 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
           </section>}
         </>}
         {point && !place && !placeLoading && <>
-          <h2 className="pr-10 text-lg font-semibold">{seller ? "Dodaj nieruchomość" : "Wybrany punkt"}</h2>
+          <h2 className="pr-10 text-lg font-semibold">Wybrany punkt</h2>
           {approximate && <p className="mt-1 text-xs">Wybrano środek mapy, ponieważ dokładne współrzędne przytrzymania nie są dostępne.</p>}
-          {seller ? <SellerForm key={`${point.lat},${point.lng}`} point={point} /> : <>
-            <p className="mt-1 text-sm">{point.lat.toFixed(6)}, {point.lng.toFixed(6)}</p>
-            <div className="mt-3 flex flex-col items-start gap-2">
-              <button type="button" className="crystal-chip px-3 py-2 text-sm" disabled={nearbyBusy} onClick={() => void loadNearby(point)}>{nearbyBusy ? "Ładowanie miejsc…" : "Pokaż miejsca w pobliżu"}</button>
-              <button type="button" className="crystal-chip px-3 py-2 text-sm" disabled={analysisBusy} onClick={() => void analyzePoint(point)}>{analysisBusy ? "Analizowanie…" : "Analiza punktu (AI)"}</button>
-              <button type="button" className="crystal-chip px-3 py-2 text-sm" onClick={() => setSeller(true)}>Dodaj tu nieruchomość</button>
-            </div>
-            {analysis && <div className="mt-3 space-y-1 text-sm">
-              <p>Wysokość: {analysis.elevation != null ? `${analysis.elevation.toFixed(0)} m n.p.m.` : "brak danych"}</p>
-              <p>Pogoda: {analysis.weather ? [analysis.weather.temperature != null ? `${analysis.weather.temperature}°C` : null, analysis.weather.conditions].filter(Boolean).join(", ") || "brak danych" : "brak danych"}</p>
-              <p>Powietrze: {analysis.airQuality ? [analysis.airQuality.aqiDisplay, analysis.airQuality.category].filter(Boolean).join(" · ") || "brak danych" : "brak danych"}</p>
-              <p>Słońce: {analysis.solar?.maxSunshineHoursPerYear != null ? `${Math.round(analysis.solar.maxSunshineHoursPerYear)} godz./rok` : "brak danych"}</p>
-            </div>}
-          </>}
+          <p className="mt-1 text-sm">{point.lat.toFixed(6)}, {point.lng.toFixed(6)}</p>
+          <button type="button" className="crystal-chip mt-3 px-3 py-2 text-sm disabled:opacity-50" disabled={analysisBusy} onClick={() => void analyzePoint(point)}>{analysisBusy ? "Analizowanie…" : "Analiza punktu AI"}</button>
+          {analysis && <div className="mt-3 space-y-1 text-sm">
+            <p>Wysokość: {analysis.elevation != null ? `${analysis.elevation.toFixed(0)} m n.p.m.` : "brak danych"}</p>
+            <p>Pogoda: {analysis.weather ? [analysis.weather.temperature != null ? `${analysis.weather.temperature}°C` : null, analysis.weather.conditions].filter(Boolean).join(", ") || "brak danych" : "brak danych"}</p>
+            <p>Powietrze: {analysis.airQuality ? [analysis.airQuality.aqiDisplay, analysis.airQuality.category].filter(Boolean).join(" · ") || "brak danych" : "brak danych"}</p>
+            <p>Słońce: {analysis.solar?.maxSunshineHoursPerYear != null ? `${Math.round(analysis.solar.maxSunshineHoursPerYear)} godz./rok` : "brak danych"}</p>
+          </div>}
+          {nearbyPlaces && <section className="mt-3 text-sm">
+            <h3 className="font-semibold">Miejsca w promieniu 2 km</h3>
+            {nearbyPlaces.length ? <ul className="mt-2 space-y-2">
+              {nearbyPlaces.map((nearbyPlace) => <li key={nearbyPlace.id}>
+                <button type="button" className="crystal-chip w-full px-3 py-2 text-left text-sm" onClick={() => {
+                  try {
+                    if (!mapRef.current) throw new Error("Mapa 3D nie jest dostępna.");
+                    mapRef.current.openPlace(nearbyPlace.id);
+                  } catch (error) {
+                    console.error("Nie udało się otworzyć miejsca:", error);
+                    setMapError("Nie udało się otworzyć miejsca.");
+                  }
+                }}>
+                  {nearbyPlace.name} · {nearbyPlace.category || "Miejsce"}{nearbyPlace.rating != null && ` · ★ ${nearbyPlace.rating}`}
+                  {nearbyPlace.location && ` · ${distanceKm(point, nearbyPlace.location).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} km w linii prostej`}
+                </button>
+              </li>)}
+            </ul> : <p className="mt-1">Nie znaleziono miejsc w pobliżu.</p>}
+            <p className="mt-2 text-xs">Dane miejsc: Google Maps</p>
+          </section>}
         </>}
-        {place?.location ? <NearbyInsights {...place.location} /> : point && <NearbyInsights {...point} />}
         {mapError && <p role="alert" className="mt-3 text-sm">{mapError} <button type="button" className="underline" onClick={() => setMapError(null)}>Zamknij</button></p>}
       </aside>}
       {minimized && !panelOpen && mapError && <div className="crystal-dialog fixed left-3 top-3 z-30 max-w-sm p-4 text-sm" role="alert">
@@ -346,7 +354,7 @@ export function PropTechWorkspace(_props: { properties: WorkspaceProperty[] }) {
             {suggestions.map((suggestion) => <button key={suggestion} type="button" className="crystal-chip pointer-events-auto px-2.5 py-1 text-[11px] font-medium" onClick={() => chooseSuggestion(suggestion)}>{suggestion}</button>)}
             {ghost && <button type="button" className="crystal-chip pointer-events-auto px-2.5 py-1 text-[11px]" onClick={() => setText(`${query}${ghost} `)} aria-label={`Uzupełnij: ${ghost}`}>↹ {ghost}</button>}
           </div>
-          <div className="crystal-dialog pointer-events-auto relative flex min-h-[90px] max-h-[60dvh] flex-col gap-2 p-3.5">
+          <div className="crystal-dialog pointer-events-auto relative flex min-h-[90px] max-h-[60dvh] flex-col gap-2 rounded-[24px] p-3.5">
             <button type="button" onClick={() => {
               setScrollLeft(0);
               setMinimized(true);

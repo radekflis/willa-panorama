@@ -18,8 +18,16 @@ export type MapPlace = {
   attributions: string[];
   location: MapPoint | null;
 };
+export type NearbyPlace = {
+  id: string;
+  name: string;
+  category: string | null;
+  rating: number | null;
+  location: MapPoint | null;
+};
 export type PropertyMapHandle = {
-  searchNearby: (point: MapPoint) => Promise<void>;
+  searchNearby: (point: MapPoint) => Promise<NearbyPlace[]>;
+  openPlace: (id: string) => void;
   orbit: (point: MapPoint) => void;
   getCenter: () => MapPoint;
 };
@@ -60,7 +68,11 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
   useImperativeHandle(ref, () => ({
     searchNearby: async (point) => {
       if (!controls.current) throw new Error("Mapa 3D nie jest dostępna.");
-      await controls.current.searchNearby(point);
+      return controls.current.searchNearby(point);
+    },
+    openPlace: (id) => {
+      if (!controls.current) throw new Error("Mapa 3D nie jest dostępna.");
+      controls.current.openPlace(id);
     },
     orbit: (point) => {
       if (!controls.current) throw new Error("Mapa 3D nie jest dostępna.");
@@ -103,6 +115,7 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
         containerRef.current.append(element);
 
         let nearbyMarkers: google.maps.maps3d.Marker3DInteractiveElement[] = [];
+        let nearbyPlaces = new Map<string, google.maps.places.Place>();
         let pointMarker: google.maps.maps3d.Marker3DInteractiveElement | null = null;
         let selection = 0;
         let search = 0;
@@ -117,9 +130,10 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
         };
         const selectPoint = (point: MapPoint, approximate: boolean) => {
           selection++;
+          search++;
           pointMarker?.remove();
           pointMarker = new Marker3DInteractiveElement({
-            position: point, altitudeMode: "RELATIVE_TO_GROUND", extruded: true,
+            position: { ...point, altitude: 0 }, altitudeMode: "CLAMP_TO_GROUND", extruded: false,
             label: "Wybrany punkt", title: "Wybrany punkt",
           });
           const marker = pointMarker;
@@ -146,9 +160,12 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
           const request = ++selection;
           callbacks.current.onPlaceLoading();
           try {
-            const { Place } = await google.maps.importLibrary("places");
-            const place = new Place({ id });
-            await place.fetchFields({ fields: PLACE_FIELDS });
+            let place = nearbyPlaces.get(id);
+            if (!place) {
+              const { Place } = await google.maps.importLibrary("places");
+              place = new Place({ id });
+              await place.fetchFields({ fields: PLACE_FIELDS });
+            }
             if (cancelled || request !== selection) return;
             const location = place.location ? { lat: place.location.lat(), lng: place.location.lng() } : null;
             const photo = place.photos?.[0];
@@ -176,23 +193,24 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
           const request = ++search;
           const { Place } = await google.maps.importLibrary("places");
           const { places } = await Place.searchNearby({
-            fields: ["id", "displayName", "location", "rating", "primaryType", "types"],
-            locationRestriction: { center: point, radius: 1500 },
+            fields: [...PLACE_FIELDS, "id", "primaryType", "types"],
+            locationRestriction: { center: point, radius: 2000 },
             maxResultCount: 20,
-            includedTypes: ["restaurant", "cafe", "school", "pharmacy", "supermarket", "park", "tourist_attraction"],
+            includedTypes: ["restaurant", "bar", "cafe", "park", "marina", "beach", "campground", "tourist_attraction", "sports_complex", "supermarket", "convenience_store", "school", "pharmacy", "parking", "lodging", "store", "beauty_salon"],
             language: "pl",
           });
-          if (cancelled || request !== search) return;
+          if (cancelled || request !== search) return [];
           nearbyMarkers.forEach((marker) => marker.remove());
+          nearbyPlaces = new Map(places.map((place) => [place.id, place]));
           nearbyMarkers = places.flatMap((place) => {
             if (!place.id || !place.location) return [];
             const label = place.displayName || "Miejsce";
             const type = [place.primaryType, ...(place.types ?? [])].find((value) => value && PIN_STYLES[value]);
             const style = (type && PIN_STYLES[type]) || { background: "#64748b", glyph: "M" };
             const marker = new Marker3DInteractiveElement({
-              position: { lat: place.location.lat(), lng: place.location.lng(), altitude: 50 },
-              altitudeMode: "RELATIVE_TO_GROUND",
-              extruded: true,
+              position: { lat: place.location.lat(), lng: place.location.lng(), altitude: 0 },
+              altitudeMode: "CLAMP_TO_GROUND",
+              extruded: false,
               label,
               title: `${label}${place.rating != null ? ` · ★ ${place.rating}` : ""}`,
               sizePreserved: true,
@@ -213,10 +231,17 @@ export const BiomimeticPropertyMap = forwardRef<PropertyMapHandle, Props>(functi
             element.append(marker);
             return [marker];
           });
-          if (nearbyMarkers.length === 0) callbacks.current.onMapError("Nie znaleziono miejsc w pobliżu wybranego punktu.");
+          return places.map((place) => ({
+            id: place.id,
+            name: place.displayName || "Miejsce",
+            category: place.primaryTypeDisplayName ?? null,
+            rating: place.rating ?? null,
+            location: place.location ? { lat: place.location.lat(), lng: place.location.lng() } : null,
+          }));
         };
         controls.current = {
           searchNearby,
+          openPlace: (id) => { void openPlace(id); },
           orbit: (point) => element.flyCameraAround({ camera: { center: point, tilt: 60, range: 700 }, durationMillis: 20000, repeatCount: 1 }),
           getCenter: () => {
             const center = element.center;
